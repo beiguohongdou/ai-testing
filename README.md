@@ -32,7 +32,7 @@
 ## 安装
 
 ```powershell
-git clone https://github.com/<用户名>/<仓库名>.git D:\tools\ai-testing
+git clone https://github.com/beiguohongdou/ai-testing.git D:\tools\ai-testing
 cd D:\tools\ai-testing
 
 .\install.ps1                                          # 只装全局技能
