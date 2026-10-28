@@ -1,6 +1,6 @@
 # AI 测试工作流套件
 
-> **版本** 2.0 | 许可证 MIT
+> **版本** 2.1 | 许可证 MIT
 
 给 Cursor / Claude Code 用的 AI 测试工作流，外加一个把 **PRD + 接口契约** 变成 **YAML 用例**、再生成 **pytest 代码** 的框架 `aigen`。
 
@@ -84,6 +84,24 @@ AI 按 aigen/draft_rules.md 写 cases/*.yaml
 已知限制：UI 只支持 Playwright；UI 断言不做变异检查；签名类鉴权需自己写客户端类（`api.client_class`）；不支持流式响应、GraphQL、gRPC。
 
 ---
+
+## 项目里要准备 / 按团队调整的东西
+
+技能会在项目里读写下面这些约定，第一次用时按需建好：
+
+| 约定 | 用途 | 对应工作流 |
+|------|------|------------|
+| 项目 `agents.md` 里的签字角色表 | 每道人工闸由谁签。技能里的表是默认分工（产品答业务口径、开发答契约、测试签其余各闸），**项目表优先** | 技能「人工闸与签字角色」 |
+| `docs/待确认.md` | gap / pending 落盘：问谁、提出日期、答复、回写位置；答复后不删行 | WF-2 ⑦ |
+| `docs/度量.md` | 每迭代一行：pending 关闭时长、fix loop 达上限比例、弱断言占比 | 技能「度量」 |
+| `pytest.ini` 注册 `smoke` / `core` mark | 冒烟排除环境问题、按改动选回归范围 | WF-4 |
+
+## 从 2.0 升级
+
+- **`aigen check` 变严了**：现在会运行接口用例并做 `mutate`，所以 CI 必须能连到被测环境；用例失败或有 `[WEAK]` 断言都会让 check 失败。原来能过的 CI 升级后可能变红，先本地跑一遍 `python -m aigen check`。
+- **产品缺陷不再用 skip**：改为 `xfail(strict=True)` + 缺陷单号（YAML 模式写 `known_issue`）；skip 只用于环境或前置条件不具备。已有的 skip 建议按此复查。
+- **用例覆盖按风险分级**：替代原来固定的「每接口 1 正 3 反」。
+- `rules/ai-testing-workflow.mdc` 和 `user-rules.txt` 精简为一句「执行技能 ai-testing」，内容以技能为准；粘贴过旧版 `user-rules.txt` 的，请到 Cursor Settings → Rules 替换。
 
 ## 验证安装
 
