@@ -1,0 +1,6 @@
+pytest
+pydantic>=2
+pyyaml
+requests
+jsonschema
+# UI 用例（kind: ui）另需：pytest-playwright，并运行 playwright install

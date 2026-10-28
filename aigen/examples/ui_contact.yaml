@@ -1,0 +1,50 @@
+# 格式示例（toolshop 试点项目）：只参考写法。页面对象类和方法必须是本项目 ui.page_dir 里真实存在的。
+kind: ui
+module: ui_contact
+cases:
+  - case_id: TC-UI-C01
+    title: 访客提交留言成功
+    req_ref: "PRD AC-08 / 矩阵 M-08"
+    design_method: equivalence
+    steps:
+      - {call: ContactPage.open}
+      - {call: ContactPage.fill_form, args: [Aigen, Tester, aigen.guest@example.com, customer-service, "${len:50}"]}
+      - {call: ContactPage.submit}
+    expected:
+      - {target: ContactPage.success_alert, op: visible, source: "PRD AC-08（PRD 未给提示原文，只断言出现）"}
+
+  - case_id: TC-UI-C02
+    title: 留言 49 字符不能提交
+    req_ref: "PRD AC-10 / 矩阵 M-10"
+    design_method: boundary
+    steps:
+      - {call: ContactPage.open}
+      - {call: ContactPage.fill_form, args: [Aigen, Tester, aigen.guest@example.com, customer-service, "${len:49}"]}
+      - {call: ContactPage.submit}
+    expected:
+      - {target: ContactPage.field_error, args: [message], op: visible, source: "PRD AC-10"}
+      - {target: ContactPage.success_alert, op: count, value: 0, source: "PRD AC-10 超出范围不能提交"}
+
+  - case_id: TC-UI-C03
+    title: 主题和留言为空不能提交
+    req_ref: "PRD AC-09 / 矩阵 M-09"
+    design_method: equivalence
+    steps:
+      - {call: ContactPage.open}
+      - {call: ContactPage.submit}
+    expected:
+      - {target: ContactPage.field_error, args: [subject], op: visible, source: "PRD AC-09"}
+      - {target: ContactPage.field_error, args: [message], op: visible, source: "PRD AC-09"}
+      - {target: ContactPage.success_alert, op: count, value: 0, source: "PRD AC-09 未填写时不能提交"}
+
+  - case_id: TC-UI-C04
+    title: 访客邮箱格式非法不能提交
+    req_ref: "PRD AC-11 / 矩阵 M-11"
+    design_method: equivalence
+    steps:
+      - {call: ContactPage.open}
+      - {call: ContactPage.fill_form, args: [Aigen, Tester, not-an-email, customer-service, "${len:50}"]}
+      - {call: ContactPage.submit}
+    expected:
+      - {target: ContactPage.field_error, args: [email], op: visible, source: "PRD AC-11"}
+      - {target: ContactPage.success_alert, op: count, value: 0, source: "PRD AC-11"}

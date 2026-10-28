@@ -1,0 +1,96 @@
+# 格式示例（toolshop 试点项目）：只参考写法。材料名、账号常量、身份名以本项目 aigen.yaml 为准。
+# 覆盖：单请求、多步 steps、extract、let + ${unique}、${today:...}、cleanup + cleanup_as、被拒用例的 not_exists。
+module: register
+cases:
+  - case_id: TC-RG-01
+    title: 注册成功后能用新账号登录
+    req_ref: "PRD AC-12 / 矩阵 M-12 / POST /users/register → POST /users/login"
+    design_method: scenario
+    precondition: anonymous
+    let:
+      email: "aigen.${unique}@example.com"
+    steps:
+      - name: 注册新用户
+        request:
+          method: POST
+          path: /users/register
+          json:
+            first_name: Aigen
+            last_name: Tester
+            email: "${email}"
+            password: Aigen@2026Test
+            dob: "1990-01-01"
+            address: {street: Test Street 1, house_number: "1", city: Vienna, state: Vienna, country: AT, postal_code: "1010"}
+        expected:
+          - {target: body.email, op: eq, value: "${email}", source: "OpenAPI POST /users/register responses.201 UserResponse.email"}
+          - {target: status, op: eq, value: 201, source: "OpenAPI POST /users/register responses.201"}
+        extract: {user_id: body.id}
+      - name: 用新账号登录
+        request:
+          method: POST
+          path: /users/login
+          json: {email: "${email}", password: Aigen@2026Test}
+        expected:
+          - {target: body.access_token, op: exists, source: "PRD AC-12；OpenAPI POST /users/login responses.200"}
+          - {target: status, op: eq, value: 200, source: "OpenAPI POST /users/login responses.200"}
+    cleanup:
+      - {method: DELETE, path: "/users/${user_id}"}
+    cleanup_as: admin
+    pending: []
+
+  - case_id: TC-RG-02
+    title: 邮箱已注册被拒
+    req_ref: "PRD AC-13 / 矩阵 M-13 / POST /users/register"
+    design_method: equivalence
+    request:
+      method: POST
+      path: /users/register
+      json:
+        first_name: Aigen
+        last_name: Tester
+        email: "${CUSTOMER_EMAIL}"
+        password: Aigen@2026Test
+        dob: "1990-01-01"
+    expected:
+      - {target: body.email, op: exists, source: "OpenAPI POST /users/register responses.409（字段级冲突）"}
+      - {target: body.id, op: not_exists, source: "OpenAPI：id 只在 201 UserResponse 中定义"}
+      - {target: status, op: eq, value: 409, source: "OpenAPI POST /users/register responses.409"}
+    pending: []
+
+  - case_id: TC-RG-03
+    title: 密码 7 位被拒
+    req_ref: "PRD AC-14 / 矩阵 M-14 / POST /users/register"
+    design_method: boundary
+    request:
+      method: POST
+      path: /users/register
+      json:
+        first_name: Aigen
+        last_name: Tester
+        email: "aigen.pwd.${unique}@example.com"
+        password: Abc@123
+        dob: "1990-01-01"
+    expected:
+      - {target: body.id, op: not_exists, source: "OpenAPI：id 只在 201 UserResponse 中定义"}
+      - {target: body.password, op: exists, source: "实测 2026-10-26（字段级错误）"}
+      - {target: status, op: eq, value: 422, source: "实测 2026-10-26；契约待补 422（评审放行 2026-10-26）"}
+    pending: []
+
+  - case_id: TC-RG-04
+    title: 差一天满 18 岁被拒
+    req_ref: "PRD AC-15 / 矩阵 M-15 / POST /users/register"
+    design_method: boundary
+    request:
+      method: POST
+      path: /users/register
+      json:
+        first_name: Aigen
+        last_name: Tester
+        email: "aigen.age.${unique}@example.com"
+        password: Aigen@2026Test
+        dob: "${today:-18y+1d}"
+    expected:
+      - {target: body.id, op: not_exists, source: "OpenAPI：id 只在 201 UserResponse 中定义"}
+      - {target: body.dob, op: exists, source: "实测 2026-10-26（字段级错误）"}
+      - {target: status, op: eq, value: 422, source: "实测 2026-10-26；契约待补 422（评审放行 2026-10-26）"}
+    pending: []
