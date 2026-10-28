@@ -77,7 +77,8 @@ AI 按 aigen/draft_rules.md 写 cases/*.yaml
 ```
 
 - 起草可以在 IDE 里让 Agent 做（推荐），也可以用 `python -m aigen draft <module>` 批量调模型：复制 `aigen\.env.example` 为项目根 `.env` 填模型地址和密钥，并把 `.env` 加进 `.gitignore`。
-- CI 用 `python -m aigen check`（validate + trace + selftest）。
+- CI 用 `python -m aigen check`（validate + trace + selftest + 运行接口用例 + mutate；任一失败或有 `[WEAK]` 断言即退出码非 0）。UI 用例不在 check 里，CI 需单独跑 `pytest testcase/ui_gen`。
+- 不用 aigen 的项目，CI 至少跑一遍 pytest 全量，并按 WF-7 扫描「只 assert status」的用例。
 - 生成的代码不要手改；要改就改 YAML 再 render。
 
 已知限制：UI 只支持 Playwright；UI 断言不做变异检查；签名类鉴权需自己写客户端类（`api.client_class`）；不支持流式响应、GraphQL、gRPC。

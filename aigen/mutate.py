@@ -110,18 +110,20 @@ def mutants(body, step, opposite):
     yield from opposite
 
 
-def run_and_record() -> Path:
+def run_and_record() -> tuple[Path, int]:
     out = root() / "reports" / "aigen_record.jsonl"
     out.parent.mkdir(exist_ok=True)
     out.unlink(missing_ok=True)
     print(f"录制：运行 {gen_root().name}/api_gen …")
-    subprocess.run([sys.executable, "-m", "pytest", str(gen_root() / "api_gen"), "-q", "-p", "no:cacheprovider", "-o", "addopts="],
-                   env={**os.environ, "AIGEN_RECORD": str(out)}, cwd=root(), stdout=subprocess.DEVNULL)
-    return out
+    rc = subprocess.run([sys.executable, "-m", "pytest", str(gen_root() / "api_gen"), "-q", "-p", "no:cacheprovider", "-o", "addopts="],
+                        env={**os.environ, "AIGEN_RECORD": str(out)}, cwd=root()).returncode
+    if rc:
+        print(f"[FAIL] 接口用例运行失败（pytest 退出码 {rc}）")
+    return out, rc
 
 
 def main(record: str | None = None) -> int:
-    path = Path(record) if record else run_and_record()
+    path, rc = (Path(record), 0) if record else run_and_record()
     recs, lets = defaultdict(list), defaultdict(dict)
     for line in path.read_text(encoding="utf-8").splitlines():
         r = json.loads(line)
@@ -169,4 +171,4 @@ def main(record: str | None = None) -> int:
                 print(f"[WEAK] {c.case_id} 步骤{i + 1}（{key}）：body 断言在「{desc}」上仍全部通过")
     print(f"mutate: 检查 {checked} 个步骤、{total} 个变异体，存活 {weak} 个；"
           f"跳过直接写动态数据的断言 {skipped} 条；无可检查 JSON body 断言的步骤 {no_body} 个；原响应不满足断言（已知缺陷/失败）{baseline_fail} 个")
-    return 1 if weak else 0
+    return 1 if weak or rc else 0

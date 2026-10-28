@@ -48,6 +48,7 @@
 10. **已知缺陷**：人工确认是缺陷、暂时修不了的用例加 `known_issue: 缺陷单号或说明`，生成 `xfail(strict=True)`；缺陷修好后用例会提示 XPASS，再删掉这一行。
 11. `design_method`：`equivalence / boundary / decision / state / scenario`。
 12. 不是每条验收都要 UI 用例：页面上看不到的信息（如商品所属分类）放在接口层验证。`req_ref` 写上对应的 `AC-xx`，trace 会检查 PRD 每条验收是否都有用例。
+13. **线上缺陷回流**：材料是缺陷单节选时，`req_ref` 写缺陷单号（如 `BUG-123`），出处写 `实测 日期`；修复前加 `known_issue: 单号`。
 
 ## UI 用例（`kind: ui`，格式见 `aigen/examples/ui_contact.yaml`）
 

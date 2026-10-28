@@ -7,7 +7,7 @@
   mutate   [录制文件]   断言区分力检查（不给文件就先录制运行一遍接口用例）
   draft    <module> [--ac AC-01,AC-02] [--force]   调用大模型批量起草用例（环境变量 AIGEN_LLM_*）
   selftest             框架自检（不依赖任何项目）
-  check                validate + trace + selftest，CI 用
+  check                validate + trace + selftest + 接口用例运行 + mutate，CI 用（任一失败或 [WEAK] 即非 0）
 """
 import subprocess
 import sys
@@ -43,8 +43,10 @@ def main(argv: list[str]) -> int:
     if cmd == "selftest":
         return selftest()
     if cmd == "check":
-        from aigen.ir import trace, validate
-        return max(validate(), trace(), selftest())
+        from aigen.ir import gen_root, trace, validate
+        from aigen.mutate import main as mutate
+        api = (gen_root() / "api_gen").is_dir()
+        return max(validate(), trace(), selftest(), mutate() if api else 0)
     print(__doc__)
     return 2
 
