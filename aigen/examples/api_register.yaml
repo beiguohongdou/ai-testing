@@ -1,4 +1,4 @@
-# 格式示例（toolshop 试点项目）：只参考写法。材料名、账号常量、身份名以本项目 aigen.yaml 为准。
+# 格式示例：只参考写法。材料名、账号常量、身份名以本项目 aigen.yaml 为准。
 # 覆盖：单请求、多步 steps、extract、let + ${unique}、${today:...}、cleanup + cleanup_as、被拒用例的 not_exists。
 module: register
 cases:

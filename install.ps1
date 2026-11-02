@@ -38,6 +38,8 @@ Get-ChildItem $skillsSrc -Directory | ForEach-Object {
         if (Test-Path $target) { Remove-Item $target -Recurse -Force }
         Copy-Item $_.FullName $target -Recurse -Force
         if (Test-Path $refSrc) { Copy-Item $refSrc (Join-Path $target "reference") -Recurse -Force }
+        # 审核员规则只维护 aigen/ 里这一份，随技能装一份给不用 aigen 的项目
+        Copy-Item (Join-Path $KitRoot "aigen\review_rules.md") (Join-Path $target "reference\review_rules.md") -Force
         Write-Host "[OK] Skill: $($_.Name) -> $target"
     }
 }

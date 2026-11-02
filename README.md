@@ -1,11 +1,13 @@
 # AI 测试工作流套件
 
-> **版本** 2.1 | 许可证 MIT
+> **版本** 2.2 | 许可证 MIT
 
 给 Cursor / Claude Code 用的 AI 测试工作流，外加一个把 **PRD + 接口契约** 变成 **YAML 用例**、再生成 **pytest 代码** 的框架 `aigen`。
 
 - **技能 `ai-testing`**：九条工作流（提示词、用例表、测试数据、排错、pytest 治理、Swagger 转代码、断言审查、可重复性、UI 页面对象与定位器自愈），让 Agent 按固定步骤干活、不编造。
-- **框架 `aigen`**：AI 只写 YAML 用例；程序校验出处是否真实存在于契约 / PRD；人评审后由模板生成 pytest（不经过 AI）；还能检查用例与代码一致、验收覆盖、断言能否区分成功与失败，并导出用例表。
+- **框架 `aigen`**：AI 只写 YAML 用例；程序校验出处是否真实存在于契约 / PRD；人评审并批准后由模板生成 pytest（不经过 AI）；还能检查用例与代码一致、验收覆盖、断言能否区分成功与失败，用历史坏样本评测闸本身，并导出用例表。
+
+2.2 的审查与评测设计参考了 Anthropic《[How the Claude Code team does code review](https://claude.dev/blog/solving-code-review-at-anthropic/)》（2026-10-15）：证据先行、新会话独立审查、批准绑定内容、审查收敛、拿历史问题评测审核员。
 
 ---
 
@@ -20,10 +22,11 @@
 ├── reference/知识框架速查.md ← 原则与检查清单（随技能一起安装）
 ├── aigen/                   ← 用例生成框架（-WithAigen 装进项目）
 │   ├── draft_rules.md       ← AI 起草 YAML 的规则
+│   ├── review_rules.md      ← AI 审核员规则（新会话审查与闸评测共用；也随技能安装）
 │   ├── aigen.yaml.example   ← 项目配置模板（换项目只改它）
-│   ├── .env.example         ← 本机配置模板（批量起草的模型地址、密钥）
+│   ├── .env.example         ← 本机配置模板（批量起草 / AI 评测的模型地址、密钥）
 │   ├── requirements.txt
-│   └── examples/            ← 接口 / UI 用例格式示例
+│   └── examples/            ← 接口 / UI 用例格式示例；evals/ 是闸评测样本示例
 └── 任务路由.md               ← 任务 → 工作流对照表
 ```
 
@@ -68,8 +71,10 @@ python -m aigen selftest                      # 框架自检应全部通过
 ```
 AI 按 aigen/draft_rules.md 写 cases/*.yaml
   → python -m aigen validate     格式 + 出处核对（引用的接口、状态码、验收编号必须真实存在）
-  → 人评审 pending               确认前不生成代码
-  → python -m aigen render       YAML → testcase/api_gen/、testcase/ui_gen/
+  → 新会话按 review_rules.md 审   不由起草的会话自审
+  → python -m aigen approve cases/x.yaml   登记这批文件的指纹、等待签字（Agent 可运行）
+  → 人评审（含 pending），在 cases/approvals.json 顶层 "sign" 填一次自己的名字 = 签字
+  → python -m aigen render       YAML → testcase/api_gen/、testcase/ui_gen/（只生成已签字且没被改过的）
   → python -m aigen trace        用例与代码一致、PRD 每条验收都有用例
   → pytest testcase/api_gen
   → python -m aigen mutate       断言区分力（报 [WEAK] 就加强断言）
@@ -77,7 +82,9 @@ AI 按 aigen/draft_rules.md 写 cases/*.yaml
 ```
 
 - 起草可以在 IDE 里让 Agent 做（推荐），也可以用 `python -m aigen draft <module>` 批量调模型：复制 `aigen\.env.example` 为项目根 `.env` 填模型地址和密钥，并把 `.env` 加进 `.gitignore`。
-- CI 用 `python -m aigen check`（validate + trace + selftest + 运行接口用例 + mutate；任一失败或有 `[WEAK]` 断言即退出码非 0）。UI 用例不在 check 里，CI 需单独跑 `pytest testcase/ui_gen`。
+- CI 用 `python -m aigen check`（validate + trace（含是否已批准）+ selftest + 运行接口用例 + mutate + 程序闸评测；任一失败或有 `[WEAK]` 断言即退出码非 0）。UI 用例不在 check 里，CI 需单独跑 `pytest testcase/ui_gen`。
+- 闸评测：`python -m aigen eval`（程序闸）/ `eval --ai`（AI 审核员，可 `--dry-run` 只出提示词交给任意 Agent，再 `--answers` 读回打分）。样本格式和用法见 `aigen/examples/evals/README.md`。
+- 签字记录在 `cases/approvals.json`，要提交进 git。顶层 `sign` 是评审人本次签名（生效后程序清空），`files` 里记每个文件的指纹和这一版的签字人。签字用于追责和找人，不是鉴权；Agent 不得填写 `sign`。一次签名只覆盖这次登记且内容没变的文件。团队里要强制「只有指定的人能签」，用 CODEOWNERS / 分支保护守住这个文件。
 - 不用 aigen 的项目，CI 至少跑一遍 pytest 全量，并按 WF-7 扫描「只 assert status」的用例。
 - 生成的代码不要手改；要改就改 YAML 再 render。
 
@@ -95,6 +102,15 @@ AI 按 aigen/draft_rules.md 写 cases/*.yaml
 | `docs/待确认.md` | gap / pending 落盘：问谁、提出日期、答复、回写位置；答复后不删行 | WF-2 ⑦ |
 | `docs/度量.md` | 每迭代一行：pending 关闭时长、fix loop 达上限比例、弱断言占比 | 技能「度量」 |
 | `pytest.ini` 注册 `smoke` / `core` mark | 冒烟排除环境问题、按改动选回归范围 | WF-4 |
+| 项目根 `REVIEW.md`（可选） | 本项目里「测试失败长什么样」、要跳过的路径；叠加在 `review_rules.md` 之后，冲突时以它为准 | 技能「证据与独立审查」 |
+| `evals/<样本id>/` | 闸评测样本：闸漏掉、后来被人确认的问题，以及确认没问题的用例；含业务材料，**不进公开仓库** | 技能「闸漏了要补样本」 |
+| `docs/闸评测.md` | `aigen eval --ai` 自动追加分数，换模型或改审查规则后对比 | 技能「度量」 |
+
+## 从 2.1 升级
+
+- **render 和 check 要求先签字**：已有的 `cases/*.yaml` 升级后全部视为未登记，`render` 会跳过、`trace` / `check` 会失败。运行一次 `python -m aigen approve`（不带文件 = 登记 `cases/` 下全部，Agent 可代跑），评审人看过后在 `cases/approvals.json` 顶层 `"sign"` 填一次名字，再提交这个文件。旧格式（每个文件一个 `"by"`）在下一次 aigen 命令时自动换成新格式，已经签过的名字会保留。
+- 闸 2、WF-5、WF-7 改为交给新会话或子代理审，输出格式统一为 `review_rules.md` 里的 JSON 发现清单。
+- 新增 `aigen eval` 和 `aigen/examples/evals/`；项目有 `evals/` 目录时，`check` 会带上程序闸评测。
 
 ## 从 2.0 升级
 

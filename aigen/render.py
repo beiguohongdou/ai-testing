@@ -5,7 +5,7 @@
 from pathlib import Path
 from typing import Any
 
-from aigen.ir import REF, VAR, Case, Pick, Request, Step, Suite, case_files, check_contract_ref, func_name, gen_root, load, out_path, step_refs
+from aigen.ir import REF, VAR, Case, Pick, Request, Step, Suite, approval_hint, approved, case_files, check_contract_ref, func_name, gen_root, load, out_path, step_refs
 
 
 def ref_expr(ref: str) -> str:
@@ -238,7 +238,12 @@ def render_suite(s: Suite) -> str:
 
 
 def main(paths: list[Path] | None = None) -> int:
+    unapproved = 0
     for p in paths or case_files():
+        if not approved(p):
+            unapproved += 1
+            print(f"[UNAPPROVED] {approval_hint(p)}；未生成代码")
+            continue
         suite = load(p)
         for c in suite.cases:
             if c.pending:
@@ -249,4 +254,4 @@ def main(paths: list[Path] | None = None) -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(render_suite(suite), encoding="utf-8")
         print(f"[OK] {p.name} -> {out.relative_to(gen_root().parent)}")
-    return 0
+    return 1 if unapproved else 0

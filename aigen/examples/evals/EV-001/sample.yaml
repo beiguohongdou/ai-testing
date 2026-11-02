@@ -1,0 +1,10 @@
+id: EV-001
+kind: bad
+gate: review
+target: test_login.py
+materials: [contract.md]
+source: 示例：评审时放过的只断言状态码用例；网关拦截返回的 401 HTML 页面也让它通过，没检查 body 里的 error
+confirmed_by: 示例
+confirmed_at: 2026-11-02
+expect:
+  - {where: test_login.py, class: 假绿}

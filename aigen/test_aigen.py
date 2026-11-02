@@ -11,14 +11,15 @@ import json
 import os
 import sys
 from datetime import date
+from pathlib import Path
 
 import pytest
 import requests
 import yaml
 from pydantic import ValidationError
 
-from aigen import export, mutate, runtime
-from aigen.ir import Suite, trace
+from aigen import evals, export, mutate, render, runtime
+from aigen.ir import Suite, approval_state, approve, approved, content_hash, trace
 from aigen.render import render_suite
 from aigen.runtime import Client, const, gen, on_fail, profile
 from aigen.ui import UiSuite
@@ -462,6 +463,8 @@ def test_trace_detects_drift_orphan_and_uncovered_requirement(tmp_path):
     (cases / "demo.yaml").write_text(yaml.safe_dump(GOOD, allow_unicode=True), encoding="utf-8")
     out = gen_dir / "test_demo.py"
     out.write_text(render_suite(Suite.model_validate(GOOD)), encoding="utf-8")
+    assert trace(cases, base, coverage=False) == 1  # 还没人工批准
+    assert approve([cases / "demo.yaml"], "评审人") == 0
     assert trace(cases, base, coverage=False) == 0
     assert trace(cases, base, coverage=True) == 1  # 只覆盖了 REQ-01，REQ-02 没有用例
 
@@ -471,6 +474,136 @@ def test_trace_detects_drift_orphan_and_uncovered_requirement(tmp_path):
     out.write_text(render_suite(Suite.model_validate(GOOD)), encoding="utf-8")
     (gen_dir / "test_extra.py").write_text("def test_TC_DEMO_99():\n    pass\n", encoding="utf-8")
     assert trace(cases, base, coverage=False) == 1
+
+
+def fill_sign(book: Path, name: str) -> None:
+    record = json.loads(book.read_text(encoding="utf-8"))
+    record["sign"] = name
+    book.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+
+
+def test_approval_is_registered_then_signed_by_a_person(tmp_path, capsys):
+    p = tmp_path / "cases" / "demo.yaml"
+    p.parent.mkdir()
+    p.write_text(yaml.safe_dump(GOOD, allow_unicode=True), encoding="utf-8")
+    book = p.parent / "approvals.json"
+
+    assert approval_state(p) == "未登记" and render.main([p]) == 1
+    assert approve([p]) == 0 and approval_state(p) == "待签字"  # Agent 登记，不签
+    assert "TO-SIGN" in capsys.readouterr().out and render.main([p]) == 1
+    fill_sign(book, "  ")
+    assert approval_state(p) == "待签字"  # 只填空格不算签
+    fill_sign(book, "张三")
+    assert approved(p) and json.loads(book.read_text(encoding="utf-8"))["sign"] == ""  # 生效后清空，避免下次新文件蹭上这次签字
+    assert approve([p]) == 0 and json.loads(book.read_text(encoding="utf-8"))["files"][p.name]["by"] == "张三"
+    raw = p.read_bytes()
+    p.write_bytes(raw.replace(b"\r\n", b"\n") if b"\r\n" in raw else raw.replace(b"\n", b"\r\n"))
+    assert approved(p)  # 只是换行符在 \r\n 和 \n 之间变了（git autocrlf），不算改动
+    p.write_text(p.read_text(encoding="utf-8") + "# 签字后又改了一行\n", encoding="utf-8")
+    assert approval_state(p) == "已改动"
+    assert approve([p]) == 0 and approval_state(p) == "待签字"  # 改过的要重新签
+    assert approve([p], "李四") == 0 and approved(p)  # 评审人本人也可以直接带 --by 登记并签字
+    bad_path = tmp_path / "cases" / "bad.yaml"
+    bad_path.write_text(yaml.safe_dump(bad(lambda c: c.update(extra_field=1)), allow_unicode=True), encoding="utf-8")
+    assert approve([bad_path]) == 1 and approval_state(bad_path) == "未登记"
+
+
+def test_one_signature_covers_only_the_registered_batch(tmp_path):
+    cases = tmp_path / "cases"
+    cases.mkdir()
+    first, second = cases / "a.yaml", cases / "b.yaml"
+    first.write_text(yaml.safe_dump(GOOD, allow_unicode=True), encoding="utf-8")
+    other = copy.deepcopy(GOOD)
+    other["module"] = "other"
+    other["cases"][0]["case_id"] = "TC-DEMO-02"
+    second.write_text(yaml.safe_dump(other, allow_unicode=True), encoding="utf-8")
+    assert approve([first, second]) == 0
+    fill_sign(cases / "approvals.json", "张三")
+    assert approved(first) and approved(second)
+
+    second.write_text(second.read_text(encoding="utf-8") + "# 改了 b\n", encoding="utf-8")
+    assert approved(first) and approval_state(second) == "已改动"  # 没改的文件不用重新签
+    fill_sign(cases / "approvals.json", "张三")
+    assert approval_state(second) == "已改动"  # 还没重新登记，旧的 sign 不能签上新内容
+    assert approve([second]) == 0 and approval_state(second) == "待签字"
+    assert approved(first)
+    fill_sign(cases / "approvals.json", "李四")
+    assert approved(second) and json.loads((cases / "approvals.json").read_text(encoding="utf-8"))["files"]["a.yaml"]["by"] == "张三"
+
+
+def test_old_approval_file_keeps_existing_signatures(tmp_path):
+    p = tmp_path / "cases" / "demo.yaml"
+    p.parent.mkdir()
+    text = yaml.safe_dump(GOOD, allow_unicode=True)
+    p.write_text(text, encoding="utf-8")
+    (p.parent / "approvals.json").write_text(json.dumps(
+        {"demo.yaml": {"by": "小耳东", "registered_at": "2026-11-02", "sha256": content_hash(p)}}, ensure_ascii=False), encoding="utf-8")
+    assert approved(p)
+    saved = json.loads((p.parent / "approvals.json").read_text(encoding="utf-8"))
+    assert saved["files"]["demo.yaml"]["by"] == "小耳东" and saved["sign"] == ""
+
+
+def write_sample(base, sid, files, **meta):
+    d = base / sid
+    d.mkdir(parents=True)
+    for name, content in files.items():
+        text = content if isinstance(content, str) else (
+            json.dumps(content, ensure_ascii=False) if name.endswith(".json") else yaml.safe_dump(content, allow_unicode=True))
+        (d / name).write_text(text, encoding="utf-8")
+    meta = {"id": sid, "source": "复盘 demo", "confirmed_by": "张三", "confirmed_at": "2026-10-28", **meta}
+    (d / "sample.yaml").write_text(yaml.safe_dump(meta, allow_unicode=True), encoding="utf-8")
+
+
+def test_eval_machine_gates_catch_miss_and_false_alarm(tmp_path, capsys):
+    rejected = [{"status": 422, "body": {"message": ["bad"]}}]
+    success = [{"status": 201, "body": {"id": "c1", "message": "ok"}}]
+    one = lambda cid: {"module": "mut", "cases": [c for c in MUT_CASES["cases"] if c["case_id"] == cid]}  # noqa: E731
+    write_sample(tmp_path, "EV-V1", {"case.yaml": bad(lambda c: c.update(extra_field=1))}, kind="bad", gate="validate", target="case.yaml")
+    write_sample(tmp_path, "EV-V2", {"case.yaml": GOOD}, kind="clean", gate="validate", target="case.yaml")
+    write_sample(tmp_path, "EV-M1", {"case.yaml": one("TC-MUT-02"), "rec.json": {"TC-MUT-02": rejected}, "opp.json": success},
+                 kind="bad", gate="mutate", target="case.yaml", record="rec.json", opposite="opp.json")
+    write_sample(tmp_path, "EV-M2", {"case.yaml": one("TC-MUT-03"), "rec.json": {"TC-MUT-03": rejected}, "opp.json": success},
+                 kind="clean", gate="mutate", target="case.yaml", record="rec.json", opposite="opp.json")
+    assert evals.main(["--dir", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert all(x in out for x in ("[CAUGHT] EV-V1", "[OK] EV-V2", "[CAUGHT] EV-M1", "[OK] EV-M2", "坏样本拦住 2/2，干净样本误报 0/2"))
+
+    write_sample(tmp_path, "EV-V3", {"case.yaml": GOOD}, kind="bad", gate="validate", target="case.yaml")  # 闸拦不住的坏样本
+    assert evals.main(["--dir", str(tmp_path)]) == 1 and "[MISS] EV-V3" in capsys.readouterr().out
+
+
+def test_eval_ai_scores_answers_and_dry_run_redacts(demo_project, tmp_path, capsys):
+    samples, answers = tmp_path / "evals", tmp_path / "answers"
+    answers.mkdir()
+    write_sample(samples, "EV-R1", {"case.yaml": GOOD, "prd.md": "账号 member@demo.test 登录"}, kind="bad", gate="review",
+                 target="case.yaml", materials=["prd.md"], expect=[{"where": "TC-DEMO-01", "class": "假绿"}])
+    write_sample(samples, "EV-R2", {"case.yaml": GOOD}, kind="clean", gate="review", target="case.yaml")
+    (answers / "EV-R1.json").write_text('```json\n{"count": 1, "findings": [{"where": "case.yaml TC-DEMO-01 expected", '
+                                         '"class": "假绿", "severity": "严重"}]}\n```', encoding="utf-8")
+    (answers / "EV-R2.json").write_text('{"count": 1, "findings": [{"where": "case.yaml:3", "class": "其他", "severity": "严重"}]}',
+                                        encoding="utf-8")
+    assert evals.main(["--ai", "--dir", str(samples), "--answers", str(answers)]) == 0
+    out = capsys.readouterr().out
+    assert "[CAUGHT] EV-R1" in out and "[FALSE] EV-R2" in out
+    assert "| answers:answers |" in (demo_project / "docs" / "闸评测.md").read_text(encoding="utf-8")
+
+    (answers / "EV-R2.json").write_text("看起来没问题", encoding="utf-8")
+    assert evals.main(["--ai", "--dir", str(samples), "--answers", str(answers)]) == 1  # 答案格式不对要报出来
+
+    assert evals.main(["--ai", "--dir", str(samples), "--dry-run"]) == 0
+    prompt = (demo_project / "reports" / "eval" / "prompts" / "EV-R1.md").read_text(encoding="utf-8")
+    assert "测试资产审查规则" in prompt and "   1| " in prompt
+    assert "member@demo.test" not in prompt and "${DEMO_USER}" in prompt  # 发出去之前已脱敏
+
+
+def test_eval_example_samples_are_valid():
+    samples, errors = evals.load_samples(Path(evals.__file__).parent / "examples" / "evals")
+    assert not errors and [s.id for s, _ in samples] == ["EV-001", "EV-002", "EV-003"]
+
+
+def test_eval_rejects_review_sample_without_expect(tmp_path, capsys):
+    write_sample(tmp_path, "EV-X", {"case.yaml": GOOD}, kind="bad", gate="review", target="case.yaml")
+    assert evals.main(["--ai", "--dir", str(tmp_path)]) == 1 and "必须写 expect" in capsys.readouterr().out
 
 
 def test_mutate_finds_weak_assertion_only(demo_project, capsys):

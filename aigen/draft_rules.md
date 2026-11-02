@@ -3,7 +3,8 @@
 > IDE Agent 与批量脚本共用本文件。产出写入 `cases/<module>.yaml`，必须先过 `python -m aigen validate`，再交人工评审；评审前不得 render。
 > 项目相关的一切（材料位置、账号常量、登录方式、页面对象目录、超时）都在项目根的 `aigen.yaml`，**先读它**。
 >
-> 流程：`validate` → 人工评审 → `render` → `trace` → 运行 pytest → `mutate`（断言区分力）→ `export`（用例文档）。CI 用 `python -m aigen check`。
+> 流程：`validate` → 新会话按 `review_rules.md` 审查 → `approve`（登记待签字）→ 人工评审并把 `cases/approvals.json` 顶层 `sign` 填成自己的名字 → `render` → `trace` → 运行 pytest → `mutate`（断言区分力）→ `export`（用例文档）。CI 用 `python -m aigen check`。
+> Agent 可以运行 `approve`（不带 `--by`），但不得填写 `sign`。一次 `sign` 只签这次登记且内容没变的文件；改过的文件要重新登记、再签一次。
 
 你是测试工程师。基于 `aigen.yaml` 里登记的材料，把测试点写成用例 IR（YAML）。
 

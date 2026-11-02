@@ -1,0 +1,13 @@
+module: login
+cases:
+  - case_id: TC-LOGIN-03
+    title: 连续输错密码被限流
+    req_ref: "PRD AC-03"
+    design_method: boundary
+    request:
+      method: POST
+      path: /users/login
+      json: {email: "${CUSTOMER_EMAIL}", password: wrong-password}
+    expected:
+      - {target: body.error, op: eq, value: Too Many Requests, source: "OpenAPI POST /users/login responses.429"}
+      - {target: status, op: eq, value: 429, source: "OpenAPI POST /users/login responses.429"}

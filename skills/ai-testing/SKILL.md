@@ -20,6 +20,19 @@ description: AI 赋能测试工作流——提示词、用例表二道闸、PRD+
 
 排错改代码时：脱敏后走 WF-4，改动范围遵循**最小改动**（只改报错相关行，先方案后人审）。
 
+## 证据与独立审查（所有工作流通用）
+
+**证据**：说「通过 / 已修复 / 无问题 / 自检全绿」时，同时贴出执行的命令、退出码、关键输出（通过数 / 失败数、报错行、`[WEAK]` 行）。没有证据的结论按「未完成」处理，人不签字。
+
+**独立审查**：闸 2（WF-2 ④）、WF-5、WF-7 不由写这份产物的会话自审，交给**新会话或子代理**：
+
+- 只给它：`review_rules.md`（技能目录 `reference/` 下；装了 aigen 的项目在 `aigen/` 下）、项目根 `REVIEW.md`（有就给，冲突时以它为准）、材料节选、被审对象。**不给起草过程**
+- 它按 `review_rules.md` 输出 JSON 发现清单（`where` / `class` / `severity` / `evidence`）；起草方对每条发现答复：改，或写明不改的理由
+- 开不了子代理时：明确告诉用户「本次是自审」，建议新开对话复审
+- **收敛**：第 2 轮起只审新改动、不重复已报的；同类问题一次改全；3 轮仍有「严重」→ 停止逐条修，建议换方案（重判材料三态、拆用例），并升级人工
+
+**闸漏了要补样本**：闸放过、后来被人确认的问题（WF-4 查出的假绿、线上缺陷、闸放行后 `mutate` 报 `[WEAK]`），以及审核员报了但人判定是误报的，都做成评测样本放进项目 `evals/`（格式见 `aigen/examples/evals/README.md`）。改 `review_rules.md`、`REVIEW.md` 或换模型后，先跑 `python -m aigen eval --ai` 对比 `docs/闸评测.md` 上一行，再投入使用。
+
 ## 任务路由
 
 | 你在干什么 | 工作流 |
@@ -135,6 +148,8 @@ description: AI 赋能测试工作流——提示词、用例表二道闸、PRD+
 | 待确认 | 「待定」是否被写死为确定结论 |
 | 敏感信息 | 是否出现真实密钥、生产标识 |
 
+**闸 2 交给新会话或子代理做**（见「证据与独立审查」）；闸 1 起草方自己核对即可，YAML 模式由 `validate` 机器核对。
+
 **闸的出处要求**：③④ 每个检查项后必须写材料定位（如 `见 PRD §3.2` / `见 OpenAPI POST /orders → responses.400`）。**写不出出处 = 该项不通过。**
 
 **缺条 ≠ 失败，编条 = 闸不过**：覆盖目标（按 ⓪+ 风险分级）达不到 → `pending` 写「契约未定义 / PRD 未覆盖」，算通过；为凑数写出材料里没有的触发条件/状态码 → 闸 1 不通过。
@@ -169,9 +184,10 @@ description: AI 赋能测试工作流——提示词、用例表二道闸、PRD+
 1. 先读 `aigen.yaml`（材料、账号常量、身份、页面对象目录）和 `aigen/draft_rules.md`（起草规则，**全文**）
 2. 双源时仍先出 ① 矩阵；再按规则写 `cases/<module>.yaml`
 3. 运行 `python -m aigen validate`：出处会到契约 / PRD 原文核对；不过就改，最多 3 轮
-4. `## 待你确认`：按 validate 汇总的 `pending` 类型列出，并按 ⑦ 落盘；**用户表态前不 render**
-5. 用户确认后：`python -m aigen render` → `trace` → 运行 pytest（失败走 WF-4）→ `mutate`（报 `[WEAK]` 走 WF-7）→ `export`（用例表.md / .csv / 验收覆盖.md）
-6. CI 门禁：`python -m aigen check`（validate + trace + selftest + 运行接口用例 + mutate，任一失败或 `[WEAK]` 即不过）；UI 用例另跑 `pytest testcase/ui_gen`
+4. `## 待你确认`：按 validate 汇总的 `pending` 类型列出，并按 ⑦ 落盘；闸 2 交给新会话审（见「证据与独立审查」）
+5. **登记 + 签字**：Agent 运行 `python -m aigen approve cases/<module>.yaml`（**不带 `--by`**），把这批 YAML 当前内容登记为「待签字」，并把输出的文件、用例数、待确认项转告用户。用户看过后，**自己**打开 `cases/approvals.json`，只把顶层 `"sign"` 填成自己的名字（整批只填这一处）。**Agent 不得填写 `"sign"` 或 `"by"`**，也不得带 `--by` 运行。下一次 aigen 命令会把这次登记且指纹没变的文件全部签上，并清空 `"sign"`。没改过的文件保持原签字人；改过或新登记的文件不会自动算进旧签字，要重新登记后再填一次 `"sign"`
+6. 签字后：`python -m aigen render` → `trace` → 运行 pytest（失败走 WF-4）→ `mutate`（报 `[WEAK]` 走 WF-7）→ `export`（用例表.md / .csv / 验收覆盖.md）
+7. CI 门禁：`python -m aigen check`（validate + trace（含是否已批准）+ selftest + 运行接口用例 + mutate + 程序闸评测，任一失败或 `[WEAK]` 即不过）；UI 用例另跑 `pytest testcase/ui_gen`
 
 批量起草（无人值守 / CI）：`python -m aigen draft <module> [--ac AC-01,AC-02]`，模型配置在项目根 `.env`（见 `aigen/.env.example`），产出同样要人工评审。
 项目还没有 aigen：`install.ps1 -ProjectRoot <项目> -WithAigen`，再把 `aigen/aigen.yaml.example` 复制成项目根 `aigen.yaml` 修改。
@@ -365,9 +381,12 @@ YAML 模式生成代码不加 mark，回归直接跑 `python -m aigen check`。
 
 **⑤ 输出**
 
+审查交给新会话或子代理（见「证据与独立审查」），它返回的 JSON 发现清单整理成下面的报告：
+
 ```text
 ## 断言审查报告
-### body+status 合规项 / 假绿风险项
+首行：N 个严重 / N 个细节 / N 个原有；没有问题直说「没有需要修改的问题」
+### body+status 合规项 / 假绿风险项（每条带 文件:行 和证据；同类合并）
 ### 反向用例稳定性
 ### 修复四结果建议（含 xfail/skip reason 草稿）
 ```
@@ -431,10 +450,13 @@ YAML 模式生成代码不加 mark，回归直接跑 `python -m aigen check`。
 
 ### 输出
 
+审查交给新会话或子代理（见「证据与独立审查」），报告格式：
+
 ```text
 ## pytest 治理报告
-### 问题（按严重度）
-- [文件:行] 问题 → 修改建议
+首行：N 个严重 / N 个细节 / N 个原有；没有问题直说「没有需要修改的问题」
+### 问题（严重 → 细节 → 原有；细节最多 3 条；同类合并成一条、列全部位置）
+- [文件:行] 问题 → 修改建议（附证据：引用原代码）
 ### 可保留项
 - ...
 ```
@@ -456,6 +478,9 @@ YAML 模式生成代码不加 mark，回归直接跑 `python -m aigen check`。
 | 产品缺陷确认 + 提单 | WF-4 第 7 步 | 测试提，开发确认 |
 | `known_issue` / strict xfail | WF-7 ④ | 测试，须有缺陷单号 |
 | 定位器自愈写缓存 | WF-9 | 测试 |
+| YAML 用例签字（`cases/approvals.json` 顶层的 `"sign"`） | WF-2 YAML 模式第 5 步 | Agent 登记，评审人只填这一处名字；Agent 不得代填 |
+
+两条通用规则：**Agent 的审查结论不能顶替表里任何一个人**；让 AI 写这份产物的人，算作必需评审人之一（和自己手写一样要负责）。
 
 上表是按常见分工给的**默认值**。团队分工不同时，在项目 `agents.md` 写一张同结构的表，**以项目表为准**；两处都没有可用的签字人时，默认由当前用户签，并在输出里写明「签字人：用户本人」。
 
@@ -467,6 +492,7 @@ YAML 模式生成代码不加 mark，回归直接跑 `python -m aigen check`。
 2. 至少 1 条能复现该缺陷的用例；`req_ref` 写缺陷单号（如 `BUG-123`），出处写 `实测 日期`
 3. 风险分级直接标「高」（WF-2 ⓪+），进 `core`
 4. 修复前用例按 WF-7 标 `known_issue` / strict xfail，修复后 XPASS 删标记
+5. 这个缺陷当初是闸放过去的：按「闸漏了要补样本」补一个 `evals/` 坏样本
 
 ## 度量（每个迭代记一次）
 
@@ -479,6 +505,8 @@ YAML 模式生成代码不加 mark，回归直接跑 `python -m aigen check`。
 | 弱断言占比 | `aigen mutate` 末行「存活 / 变异体」；非 aigen 项目用 WF-7 假绿风险项数 ÷ 审查用例数 |
 
 趋势变差时先查流程，不先怪执行：pending 时长变长 → 查 WF-2 ⑦ 有没有落实「问谁」；达上限比例变高 → 查是否把环境问题带进了 fix loop（WF-4 第 2 步）。
+
+AI 审核员的分数单独记在 `docs/闸评测.md`（`aigen eval --ai` 自动追加：坏样本问题发现率、干净样本误报率）。发现率降了 → 先看是不是换了模型或改了 `review_rules.md` / `REVIEW.md`。
 
 ---
 

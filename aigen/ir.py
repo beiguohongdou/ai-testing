@@ -4,8 +4,11 @@
     python -m aigen trace                           # IR 与 testcase/*_gen 是否一致 + PRD 验收覆盖
 """
 import ast
+import hashlib
+import json
 import re
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -373,6 +376,124 @@ def case_files() -> list[Path]:
     return sorted(cases_dir().glob("*.yaml"))
 
 
+def content_hash(p: Path) -> str:
+    """换行统一成 \\n 再算，避免 git autocrlf 让 Windows / Linux 上算出不同的值。"""
+    return hashlib.sha256(p.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _save_approvals(cases: Path, data: dict) -> None:
+    (cases / "approvals.json").write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def load_approvals(cases: Path) -> dict:
+    """底单：顶层 sign 是评审人本次要签的名字（只填这一处）；files 里每个文件记指纹和这一版是谁签的。"""
+    p = cases / "approvals.json"
+    if not p.exists():
+        return {"sign": "", "files": {}}
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    if "files" in raw:
+        raw.setdefault("sign", "")
+        raw.setdefault("files", {})
+        return raw
+    files = {}
+    for name, entry in raw.items():
+        if not isinstance(entry, dict) or "sha256" not in entry:
+            continue
+        by = str(entry.get("by", "")).strip()
+        files[name] = {"sha256": entry["sha256"], "signed_sha256": entry["sha256"] if by else "",
+                       "by": by, "signed_at": entry.get("registered_at", "") if by else ""}
+    data = {"sign": "", "files": files}
+    _save_approvals(cases, data)
+    return data
+
+
+def settle_signature(cases: Path) -> dict:
+    """评审人把 sign 填上名字后，下一次 aigen 命令把「已登记且指纹没变」的文件全部签上，然后清空 sign。"""
+    data = load_approvals(cases)
+    sign = str(data.get("sign", "")).strip()
+    if not sign:
+        return data
+    applied, stale = [], []
+    for name, entry in data["files"].items():
+        path = cases / name
+        if not path.exists() or entry.get("sha256") != content_hash(path):
+            stale.append(name)
+            continue
+        if entry.get("signed_sha256") == entry.get("sha256") and str(entry.get("by", "")).strip():
+            continue
+        entry["signed_sha256"] = entry["sha256"]
+        entry["by"] = sign
+        entry["signed_at"] = date.today().isoformat()
+        applied.append(name)
+    data["sign"] = ""
+    _save_approvals(cases, data)
+    if applied:
+        print(f"[SIGNED] {'、'.join(applied)}（{sign}）")
+    if stale:
+        print(f"[FAIL] {'、'.join(stale)} 的内容和登记指纹不一致，这次的 sign 没有签上，请先重新 approve 再填 sign")
+    return data
+
+
+def approval_state(p: Path) -> str:
+    """已签字 / 待签字 / 已改动 / 未登记。签字只对登记时的那份内容有效；之后 YAML 再被改过（人或 AI），要重新登记、重新签。"""
+    entry = settle_signature(p.parent)["files"].get(p.name)
+    if not entry:
+        return "未登记"
+    current = content_hash(p)
+    if entry.get("sha256") != current:
+        return "已改动"
+    if entry.get("signed_sha256") == current and str(entry.get("by", "")).strip():
+        return "已签字"
+    return "待签字"
+
+
+def approved(p: Path) -> bool:
+    return approval_state(p) == "已签字"
+
+
+def approval_hint(p: Path) -> str:
+    state = approval_state(p)
+    if state == "待签字":
+        return f"{p.name} 待签字：看过本次登记后，在 cases/approvals.json 顶层把 \"sign\" 填成评审人名字（只填这一处）"
+    return f"{p.name} 已改动：先运行 python -m aigen approve cases/{p.name} 重新登记，再把 \"sign\" 填上名字"
+
+
+def approve(paths: list[Path] | None, by: str = "") -> int:
+    """登记待签字（不带 by，Agent 可运行）。带 by、或评审人自己填 sign，只签这一批已登记且指纹没变的文件。"""
+    # ponytail: 签字是追责记录，不是鉴权；要强制「只有指定的人能签」，用 CODEOWNERS / 分支保护守住 cases/approvals.json
+    paths = paths or case_files()
+    if validate(paths):
+        print("[FAIL] 校验没通过，不能登记")
+        return 1
+    by = by.strip()
+    for cases in {p.parent for p in paths}:
+        data = load_approvals(cases)
+        unsigned = False
+        for p in (x for x in paths if x.parent == cases):
+            current = content_hash(p)
+            entry = data["files"].get(p.name, {})
+            if entry.get("sha256") == current and entry.get("signed_sha256") == current and str(entry.get("by", "")).strip():
+                print(f"[SIGNED] {p.name}：内容没变，保留 {entry['by']} 的签字")
+                continue
+            suite = load(p)
+            pending = [c.case_id for c in suite.cases if c.pending]
+            data["files"][p.name] = {"sha256": current, "signed_sha256": "", "by": "", "signed_at": ""}
+            unsigned = True
+            print(f"[TO-SIGN] {p.name}：{len(suite.cases)} 条用例"
+                  + (f"，其中待确认 {len(pending)} 条不会生成代码 {pending}" if pending else ""))
+        if unsigned and str(data.get("sign", "")).strip():
+            print("[FAIL] 本次登记有新内容，已清空 sign；看过这次的清单后再填")
+            data["sign"] = ""
+        if by:
+            data["sign"] = by
+        _save_approvals(cases, data)
+        if by:
+            settle_signature(cases)
+    if not by:
+        print("下一步由评审人签字：看过上面的文件后，打开 cases/approvals.json，只把顶层 \"sign\" 填成自己的名字并保存（Agent 不得代填）")
+    return 0
+
+
 def out_path(suite, base: Path | None = None) -> Path:
     """接口用例生成到 testcase/api_gen/，UI 用例生成到 testcase/ui_gen/。"""
     return (base or gen_root()) / f"{suite.kind}_gen" / f"test_{suite.module}.py"
@@ -423,6 +544,8 @@ def trace(cases: Path | None = None, base: Path | None = None, coverage: bool = 
             covered.update(ac_ids(c.req_ref))
         if not ready:
             continue
+        if not approved(p):
+            problems.append(approval_hint(p))
         ir_funcs |= {func_name(c.case_id) for c in ready}
         out = out_path(suite, base)
         if not out.exists():

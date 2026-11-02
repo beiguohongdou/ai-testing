@@ -1,4 +1,4 @@
-# 格式示例（toolshop 试点项目）：只参考写法。页面对象类和方法必须是本项目 ui.page_dir 里真实存在的。
+# 格式示例：只参考写法。页面对象类和方法必须是本项目 ui.page_dir 里真实存在的。
 kind: ui
 module: ui_contact
 cases:

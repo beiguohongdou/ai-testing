@@ -110,6 +110,17 @@ def mutants(body, step, opposite):
     yield from opposite
 
 
+def survivors(step, body, variables: dict, opposite) -> tuple[list[str], int]:
+    """断言在变异体上仍全部通过 = 区分不了；返回这些变异体的描述，以及变异体总数。"""
+    lines, _ = checkable(step)
+    alive, total = [], 0
+    for desc, m in mutants(body, step, opposite):
+        total += 1
+        if passes(lines, m, variables):
+            alive.append(desc)
+    return alive, total
+
+
 def run_and_record() -> tuple[Path, int]:
     out = root() / "reports" / "aigen_record.jsonl"
     out.parent.mkdir(exist_ok=True)
@@ -164,11 +175,11 @@ def main(record: str | None = None) -> int:
         ok = rec["status"] < 400
         opposite = [(f"{cid} 的 {r['status']} 响应（{key} 的相反结果）", r["body"])
                     for cid, r in by_endpoint[key] if (r["status"] < 400) != ok and r["body"] is not None][:3]
-        for desc, body in mutants(rec["body"], step, opposite):
-            total += 1
-            if passes(lines, body, variables):
-                weak += 1
-                print(f"[WEAK] {c.case_id} 步骤{i + 1}（{key}）：body 断言在「{desc}」上仍全部通过")
+        alive, n = survivors(step, rec["body"], variables, opposite)
+        total += n
+        weak += len(alive)
+        for desc in alive:
+            print(f"[WEAK] {c.case_id} 步骤{i + 1}（{key}）：body 断言在「{desc}」上仍全部通过")
     print(f"mutate: 检查 {checked} 个步骤、{total} 个变异体，存活 {weak} 个；"
           f"跳过直接写动态数据的断言 {skipped} 条；无可检查 JSON body 断言的步骤 {no_body} 个；原响应不满足断言（已知缺陷/失败）{baseline_fail} 个")
     return 1 if weak or rc else 0

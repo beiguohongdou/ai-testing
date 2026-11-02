@@ -1,0 +1,10 @@
+id: EV-002
+kind: bad
+gate: review
+target: login.yaml
+materials: [contract.md]
+source: 示例：为凑「1 正 3 反」写出契约里没有的 429，评审时没对契约
+confirmed_by: 示例
+confirmed_at: 2026-11-02
+expect:
+  - {where: TC-LOGIN-03, class: 编造出处}
