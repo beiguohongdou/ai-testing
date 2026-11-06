@@ -10,22 +10,22 @@ api:
   base_url: API                    # constants 里的常量名
   timeout: 30                      # 秒
   # headers: {X-Api-Key: "${API_KEY}"}   # 每个请求都带的头
-  login:                           # 前置登录 / cleanup_as 用；不需要登录可删掉
+  login:                           # 前置登录 / cleanup_as 用；不需要登录可删掉。下面都要改成这个项目契约里的名字
     method: POST
-    path: /users/login
-    user_field: email
-    password_field: password
-    # body: form                   # 表单登录
-    token_field: access_token      # 点路径，如 data.token；不填表示靠 Cookie 保持登录
-    header: Authorization
-    prefix: "Bearer "
+    path: /session                 # 登录路径
+    user_field: account            # 请求体里的账号字段
+    password_field: secret         # 请求体里的密码字段
+    # body: form                   # 表单登录时改成 form
+    token_field: token             # 响应里 token 的点路径，如 data.token；不填表示靠 Cookie
+    header: Authorization          # 后续请求携带 token 的头
+    prefix: "Bearer "              # 头的前缀，没有就留空字符串
   # oauth2:                        # 和 login 二选一
   #   token_url: /oauth/token
   #   grant: password              # 或 client_credentials（roles 给 [client_id 常量, client_secret 常量]）
   # client_class: mypkg.auth:SignedClient   # 签名类鉴权：继承 aigen.runtime.Client
   roles:                           # precondition / cleanup_as 可用的身份 → [账号常量, 密码常量]
-    customer: [CUSTOMER_EMAIL, CUSTOMER_PASSWORD]
-    admin: [ADMIN_EMAIL, ADMIN_PASSWORD]
+    operator: [ACCOUNT, SECRET]          # 身份名: [账号常量, 密码常量]
+    admin: [ADMIN_ACCOUNT, ADMIN_SECRET]
 
 ui:                                # 只用接口用例可删掉
   page_dir: page                   # 页面对象目录

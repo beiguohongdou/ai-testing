@@ -1,0 +1,15 @@
+# 干净样本：每条预期都能在 contract.md 里找到，没有多写需求里才有、契约里没有的句子。
+module: <模块名>
+cases:
+  - case_id: TC-EX-02
+    title: <非法名称被拒，不返回编号>
+    req_ref: "契约 POST /resources responses.400"
+    design_method: equivalence
+    request:
+      method: POST
+      path: /resources
+      json: {name: "${NAME}"}
+    expected:
+      - {target: body.error, op: eq, value: "<错误文案>", source: "契约 POST /resources responses.400"}
+      - {target: body.id, op: not_exists, source: "契约 POST /resources responses.400 的结构里没有 id"}
+      - {target: status, op: eq, value: 400, source: "契约 POST /resources responses.400"}

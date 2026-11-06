@@ -1,8 +1,10 @@
-## OpenAPI 节选：POST /users/login
+## 契约节选：POST /resources
 
-- 200：`{access_token: string, token_type: string, expires_in: integer}`
-- 401：`{error: "Unauthorized"}`
+这里只列契约里真正有的状态码。样本用例如果引用了下面没有的码，就是编造出处。
 
-## PRD 节选
+- 201：`{id: string, name: string}`
+- 400：`{error: string}`
 
-- AC-03：密码错误时提示「账号或密码错误」，不提示账号是否存在。
+## 需求节选
+
+- AC-03：名称不合法时拒绝创建，并指出名称字段。

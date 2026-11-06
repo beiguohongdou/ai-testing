@@ -1,8 +1,9 @@
 id: EV-003
-kind: clean
+kind: clean                             # 合格用例。审核员如果报「严重」，这次评测算误报
 gate: review
-target: login.yaml
+target: case.yaml
 materials: [contract.md]
-source: 示例：评审通过并已 approve 的用例
+source: 示例：已经评审通过的用例
 confirmed_by: 示例
 confirmed_at: 2026-11-02
+# clean 样本不要写 expect

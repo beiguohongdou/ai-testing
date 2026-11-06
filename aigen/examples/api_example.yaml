@@ -1,0 +1,66 @@
+# 格式示例。每一行都是占位，抄的时候换成你这个项目的编号、路径和字段。
+# 常量名（如 ${ACCOUNT}）必须在本项目 aigen.yaml 的 constants 里有定义。
+# 下面凑齐了这些写法：单请求、多步 steps、extract、let、${unique}、${today}、cleanup、cleanup_as、not_exists。
+module: <模块名>                 # 同文件用例的分组名，生成代码时用作文件名的一部分
+cases:
+  - case_id: TC-EX-01            # 用例编号，项目内唯一
+    title: <一句话说明这条用例>      # 给人看的标题
+    req_ref: "PRD AC-01 / 矩阵 M-01 / POST /resources"   # 指回需求编号和契约
+    design_method: scenario      # equivalence / boundary / decision / state / scenario
+    precondition: anonymous      # anonymous，或 aigen.yaml 里 api.roles 的身份名
+    let:                         # 同一步里要重复使用的值
+      name: "item-${unique}"     # ${unique} 每次运行换成一段随机串
+    steps:
+      - name: <步骤名>
+        request:
+          method: POST           # GET / POST / PUT / DELETE
+          path: /resources       # 契约里的路径
+          json:                  # 请求体。字段名必须来自契约
+            name: "${name}"
+            owner: "${ACCOUNT}"  # ${大写} 引用常量，不要写死账号
+            due: "${today:+1d}"  # 相对今天的日期
+        expected:
+          - {target: body.name, op: eq, value: "${name}", source: "契约 POST /resources responses.201 的 name"}
+          - {target: status, op: eq, value: 201, source: "契约 POST /resources responses.201"}
+        extract: {resource_id: body.id}   # 从本步响应取出，供后面的步骤使用
+      - name: <下一步>
+        request:
+          method: GET
+          path: "/resources/${resource_id}"
+        expected:
+          - {target: body.id, op: eq, value: "${resource_id}", source: "契约 GET /resources/{id} responses.200"}
+          - {target: status, op: eq, value: 200, source: "契约 GET /resources/{id} responses.200"}
+    cleanup:                     # 用例结束时尽量删掉造出来的数据
+      - {method: DELETE, path: "/resources/${resource_id}"}
+    cleanup_as: admin            # 删除接口要求的身份，须在 aigen.yaml 的 roles 里
+    pending: []                  # 材料没写清的预期写在这里，不要写进 expected
+
+  - case_id: TC-EX-02            # 单请求：不写 steps，直接写 request
+    title: <重复创建被拒>
+    req_ref: "PRD AC-02 / 矩阵 M-02 / POST /resources"
+    design_method: equivalence
+    request:
+      method: POST
+      path: /resources
+      json:
+        name: "${ACCOUNT}"
+    expected:
+      - {target: body.name, op: exists, source: "契约 POST /resources responses.409 指出冲突字段"}
+      - {target: body.id, op: not_exists, source: "契约里 id 只出现在 201 的响应中"}
+      - {target: status, op: eq, value: 409, source: "契约 POST /resources responses.409"}
+    pending: []
+
+  - case_id: TC-EX-03
+    title: <低于下限被拒>
+    req_ref: "PRD AC-03 / 矩阵 M-03 / POST /resources"
+    design_method: boundary
+    request:
+      method: POST
+      path: /resources
+      json:
+        name: "x"                # 换成契约写明的非法边界值
+    expected:
+      - {target: body.id, op: not_exists, source: "契约里 id 只出现在成功响应中"}
+      - {target: body.name, op: exists, source: "契约或实测：错误落在这个字段上"}
+      - {target: status, op: eq, value: 422, source: "状态码必须在契约 responses 里；契约没有就标 pending，不要写死"}
+    pending: []

@@ -1,0 +1,38 @@
+# 格式示例。类名、方法名要换成你这个项目页面对象里真实存在的。
+# YAML 里不写定位器。定位器写在页面对象里。
+kind: ui
+module: <模块名>
+cases:
+  - case_id: TC-UI-01
+    title: <必填项填完可以提交>
+    req_ref: "PRD AC-01 / 矩阵 M-01"
+    design_method: equivalence
+    steps:
+      - {call: RecordPage.open}                          # 页面对象类.方法
+      - {call: RecordPage.fill, args: ["${len:8}", "${ACCOUNT}"]}  # args 按该方法的参数顺序；${len:8} 是 8 个字符
+      - {call: RecordPage.submit}
+    expected:
+      - {target: RecordPage.success_alert, op: visible, source: "PRD AC-01。没给出提示原文时，只断言出现"}
+
+  - case_id: TC-UI-02
+    title: <短于下限不能提交>
+    req_ref: "PRD AC-02 / 矩阵 M-02"
+    design_method: boundary
+    steps:
+      - {call: RecordPage.open}
+      - {call: RecordPage.fill, args: ["${len:1}", "${ACCOUNT}"]}
+      - {call: RecordPage.submit}
+    expected:
+      - {target: RecordPage.field_error, args: [name], op: visible, source: "PRD AC-02。args 是该方法要指出的字段名"}
+      - {target: RecordPage.success_alert, op: count, value: 0, source: "PRD AC-02 不该出现成功提示"}
+
+  - case_id: TC-UI-03
+    title: <必填项为空不能提交>
+    req_ref: "PRD AC-03 / 矩阵 M-03"
+    design_method: equivalence
+    steps:
+      - {call: RecordPage.open}
+      - {call: RecordPage.submit}
+    expected:
+      - {target: RecordPage.field_error, args: [name], op: visible, source: "PRD AC-03"}
+      - {target: RecordPage.success_alert, op: count, value: 0, source: "PRD AC-03"}

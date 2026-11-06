@@ -1,10 +1,10 @@
-id: EV-001
-kind: bad
-gate: review
-target: test_login.py
-materials: [contract.md]
-source: 示例：评审时放过的只断言状态码用例；网关拦截返回的 401 HTML 页面也让它通过，没检查 body 里的 error
-confirmed_by: 示例
-confirmed_at: 2026-11-02
-expect:
-  - {where: test_login.py, class: 假绿}
+id: EV-001                              # 与目录名相同
+kind: bad                               # bad：闸应该拦住；clean：闸不该报严重问题
+gate: review                            # review：交给审核；validate / mutate：程序闸
+target: case.py                         # 被审文件，相对本样本目录
+materials: [contract.md]                # 审核时允许看到的材料，相对本样本目录
+source: 示例：评审放过了只断言状态码的用例   # 这个问题从哪来：缺陷单、复盘或哪次评审
+confirmed_by: 示例                       # 谁确认的
+confirmed_at: 2026-11-02                # 确认日期
+expect:                                 # 坏样本必填：闸应该指出的问题
+  - {where: case.py, class: 假绿}        # where 要能在发现里被匹配到；class 用 review_rules.md 里的分类

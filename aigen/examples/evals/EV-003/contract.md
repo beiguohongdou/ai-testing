@@ -1,4 +1,4 @@
-## OpenAPI 节选：POST /users/login
+## 契约节选：POST /resources
 
-- 200：`{access_token: string, token_type: string, expires_in: integer}`
-- 401：`{error: "Unauthorized"}`
+- 201：`{id: string, name: string}`
+- 400：`{error: string}`

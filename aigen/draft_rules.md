@@ -39,19 +39,19 @@
    - **断言要能区分成功和失败**：例如想表达「被拒」，不要只断言一个成功响应里也会有的字段（`message`、`email`、`subject`），加上「没有生成记录」（`body.id not_exists`）。`python -m aigen mutate` 会用同一接口的相反结果响应检查，报 `[WEAK]` 就要加强。
    - 响应头：`{target: header.Content-Type, op: contains, value: json}`（只支持 eq / contains / exists / not_exists）。
    - `matches`：正则匹配，如 `{target: body.id, op: matches, value: "^[0-9A-Z]{26}$"}`。
-   - **契约结构**：`{target: body, op: matches_contract, value: "OpenAPI GET /users/me responses.200"}`，响应必须符合契约里这个状态码定义的结构（字段类型、必填字段）。契约有结构定义的接口优先加这一条。
+   - **契约结构**：`{target: body, op: matches_contract, value: "契约名 GET /resources/{id} responses.200"}`，响应必须符合契约里这个状态码定义的结构（字段类型、必填字段）。契约有结构定义的接口优先加这一条。
    - 非 JSON 响应在用例（或步骤）上写 `body_type`：`text`（eq / contains / matches / len_gt，断言整个 body）、`bytes`（文件下载：len_gt / sha256）、`xml`（`body.元素.子元素`：eq / contains / matches / exists / not_exists）。
-9. 单请求用 `request + expected`；多步用 `steps`（格式见本项目 `cases/` 里已有用例；还没有时看 `aigen/examples/api_register.yaml`）：
+9. 单请求用 `request + expected`；多步用 `steps`（格式见本项目 `cases/` 里已有用例；还没有时看 `aigen/examples/api_example.yaml`）：
    - 请求体 `json` 和 `form`（表单）二选一；上传文件写 `files: {字段名: 文件路径}`（相对项目根，可和 form 同用）；单个请求的特殊头写 `headers`；所有请求共用的头写在 `aigen.yaml` 的 `api.headers`。
    - `extract: {变量: body.路径}` 按位置取值；按条件取值写 `{from: body.列表, where: {slug: pliers}, take: id}`。
-   - **会冲突的创建**（唯一约束：收藏、注册邮箱）必须写 `cleanup`；删除需要别的身份时加 `cleanup_as: 角色名`。能用 `${unique}` 避免冲突时优先用。
-   - **不会冲突的创建**（如留言）没有删除接口时可以写，但要在汇报里写明「会累积测试数据」。
+   - **会冲突的创建**（字段有唯一约束）必须写 `cleanup`；删除需要别的身份时加 `cleanup_as: 角色名`。能用 `${unique}` 避免冲突时优先用。
+   - **不会冲突的创建**（只追加、没有删除接口）可以写，但要在汇报里写明「会累积测试数据」。
 10. **已知缺陷**：人工确认是缺陷、暂时修不了的用例加 `known_issue: 缺陷单号或说明`，生成 `xfail(strict=True)`；缺陷修好后用例会提示 XPASS，再删掉这一行。
 11. `design_method`：`equivalence / boundary / decision / state / scenario`。
 12. 不是每条验收都要 UI 用例：页面上看不到的信息（如商品所属分类）放在接口层验证。`req_ref` 写上对应的 `AC-xx`，trace 会检查 PRD 每条验收是否都有用例。
 13. **线上缺陷回流**：材料是缺陷单节选时，`req_ref` 写缺陷单号（如 `BUG-123`），出处写 `实测 日期`；修复前加 `known_issue: 单号`。
 
-## UI 用例（`kind: ui`，格式见 `aigen/examples/ui_contact.yaml`）
+## UI 用例（`kind: ui`，格式见 `aigen/examples/ui_example.yaml`）
 
 1. 步骤只能写 `{call: 页面对象类.方法, args: [...]}`，**YAML 里不允许出现定位器**。
 2. 断言目标是返回 Locator 的页面对象方法，或 `url`；`op`：`visible / not_visible / count / contains_text / url_matches`。PRD 没给提示原文时只断言 `visible`，不要照抄页面文字。

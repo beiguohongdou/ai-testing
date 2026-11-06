@@ -1,10 +1,10 @@
 id: EV-002
 kind: bad
 gate: review
-target: login.yaml
+target: case.yaml
 materials: [contract.md]
-source: 示例：为凑「1 正 3 反」写出契约里没有的 429，评审时没对契约
+source: 示例：用例引用了契约里没有的状态码
 confirmed_by: 示例
 confirmed_at: 2026-11-02
 expect:
-  - {where: TC-LOGIN-03, class: 编造出处}
+  - {where: TC-EX-03, class: 编造出处}

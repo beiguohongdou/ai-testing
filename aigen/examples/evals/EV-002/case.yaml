@@ -1,0 +1,14 @@
+# 坏样本：下面的 429 在同目录 contract.md 里不存在。出处不能编。
+module: <模块名>
+cases:
+  - case_id: TC-EX-03
+    title: <被拒>
+    req_ref: "PRD AC-03"
+    design_method: boundary
+    request:
+      method: POST
+      path: /resources
+      json: {name: "${NAME}"}
+    expected:
+      - {target: body.error, op: eq, value: "<错误文案>", source: "契约 POST /resources responses.429"}
+      - {target: status, op: eq, value: 429, source: "契约 POST /resources responses.429"}
