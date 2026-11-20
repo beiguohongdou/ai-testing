@@ -1,128 +1,95 @@
-# AI 测试工作流套件
+# caseflow（AI 测试提效框架 v3 个人实战版）
 
-> **版本** 2.2 | 许可证 MIT
+> **版本** 3.0 | 许可证 MIT  
+> 配套技能：`caseflow/SKILL.md`（通过 `caseflow skill` 安装或打印） | 旧版 v2.2 归档在 Git Tag `v2.2-archive`
 
-给 Cursor / Claude Code 用的 AI 测试工作流，外加一个把 **PRD + 接口契约** 变成 **YAML 用例**、再生成 **pytest 代码** 的框架 `aigen`。
+一个专门帮个人测试工程师落地的轻量框架：**需求/接口文档/抓包 → 测试用例提纲拍板 → Playwright UI + 接口双轨自动化 → 反向导出 Excel 用例表**。
 
-- **技能 `ai-testing`**：九条工作流（提示词、用例表、测试数据、排错、pytest 治理、Swagger 转代码、断言审查、可重复性、UI 页面对象与定位器自愈），让 Agent 按固定步骤干活、不编造。
-- **框架 `aigen`**：AI 只写 YAML 用例；程序校验出处是否真实存在于契约 / PRD；人评审并批准后由模板生成 pytest（不经过 AI）；还能检查用例与代码一致、验收覆盖、断言能否区分成功与失败，用历史坏样本评测闸本身，并导出用例表。
-
-2.2 的审查与评测设计参考了 Anthropic《[How the Claude Code team does code review](https://claude.dev/blog/solving-code-review-at-anthropic/)》（2026-10-15）：证据先行、新会话独立审查、批准绑定内容、审查收敛、拿历史问题评测审核员。
-
----
-
-## 目录
-
-```
-├── install.ps1              ← 安装脚本（Windows PowerShell）
-├── install.bat              ← 双击安装
-├── user-rules.txt           ← 可选：粘贴到 Cursor Settings → Rules，全局生效
-├── skills/ai-testing/SKILL.md   ← 九条工作流（核心）
-├── rules/ai-testing-workflow.mdc ← 项目规则：提醒 Agent 走技能
-├── reference/知识框架速查.md ← 原则与检查清单（随技能一起安装）
-├── aigen/                   ← 用例生成框架（-WithAigen 装进项目）
-│   ├── draft_rules.md       ← AI 起草 YAML 的规则
-│   ├── review_rules.md      ← AI 审核员规则（新会话审查与闸评测共用；也随技能安装）
-│   ├── aigen.yaml.example   ← 项目配置模板（换项目只改它）
-│   ├── .env.example         ← 本机配置模板（批量起草 / AI 评测的模型地址、密钥）
-│   ├── requirements.txt
-│   └── examples/            ← 接口 / UI 用例格式示例；evals/ 是闸评测样本示例
-└── 任务路由.md               ← 任务 → 工作流对照表
-```
+v3 彻底砍掉了繁琐的团队审批签字、强正则出处阻断和全量 YAML 编译流程，改为：
+- **标准可安装 Python 包**（`pip install` 到任意虚拟环境，不往业务项目复制框架源码）
+- **UI 自动化（主力）**：半自动过验证码存登录态、交互式/单页瘦身 DOM 抓元素（省 95% Token）、接口造上游数据注入 UI、失败自动抓截图 + 控制台报错 + 报错接口
+- **接口自动化**：单接口多数据走极简 YAML 参数化（改完即跑，无需编译）、多步业务流写原生 Python、按角色 Session 复用登录、原生支持国内 `HTTP 200 + body.code`、失败自动拼装脱敏 `curl` 复现命令、可选变异检查防假绿
 
 ---
 
-## 安装
+## 一、 安装
+
+### 1. 安装 `caseflow` Python 包
 
 ```powershell
-git clone https://github.com/beiguohongdou/ai-testing.git D:\tools\ai-testing
-cd D:\tools\ai-testing
+# 方式 A：直接从 GitHub 安装（任何电脑 / 虚拟环境通用，不依赖本地路径）
+pip install "git+https://github.com/beiguohongdou/ai-testing.git"
+# 如果需要 Playwright UI 支持：
+pip install "caseflow[ui] @ git+https://github.com/beiguohongdou/ai-testing.git"
 
-.\install.ps1                                          # 只装全局技能
-.\install.ps1 -ProjectRoot "D:\你的项目"                 # 再装项目规则
-.\install.ps1 -ProjectRoot "D:\你的项目" -WithAigen      # 再把 aigen 框架装进项目
+# 方式 B：本地开发调试（在仓库根目录执行）
+pip install -e .
 ```
 
-也可以双击 `install.bat` 按提示操作。装完重启 Cursor，或新开一个 Agent 对话。
-
-安装位置：
-- 技能 → `%USERPROFILE%\.agents\skills\ai-testing\`（Cursor）和 `%USERPROFILE%\.claude\skills\ai-testing\`（Claude Code）
-- 规则 → `<项目>\.cursor\rules\ai-testing-workflow.mdc`
-- 框架 → `<项目>\aigen\`（重复安装只覆盖框架代码，不动项目的 `aigen.yaml`、`.env`、`cases/`）
-
-**Mac / Linux**：`install.ps1` 只支持 Windows。手动把 `skills/ai-testing` 复制到 `~/.agents/skills/`（Cursor）或 `~/.claude/skills/`（Claude Code），再把 `reference/` 复制到 `ai-testing/` 里面；需要框架时把 `aigen/` 复制到项目根。
-
-更新：`git pull` 后重新运行同一条安装命令。
-
----
-
-## 使用 aigen
-
-需要 Python 3.10+。在项目根：
+安装完成后验证：
 
 ```powershell
-pip install -r aigen\requirements.txt
-copy aigen\aigen.yaml.example aigen.yaml     # 填材料路径、常量模块、登录方式、身份
-python -m aigen selftest                      # 框架自检应全部通过
+caseflow --help
+caseflow selftest
 ```
 
-日常流程：
+### 2. 按你的 Agent 形态加载 AI 工作流技能（全平台通用）
 
+`caseflow init` 默认**只生成纯净的测试骨架**，不会强制往项目里建 `.cursor/`。根据你使用的工具按需选择一条命令：
+
+```powershell
+caseflow skill           # 主流 CLI / IDE Agent（装进 ~/.agents/skills 和 ~/.claude/skills，支持 Claude Code / Codex / Cursor）
+caseflow skill --agents  # 额外在当前项目生成通用 AGENTS.md 入口（不覆盖已有文件）
+caseflow skill --cursor  # 仅 Cursor 用户需要：额外在当前项目生成 .cursor/rules/ai-testing-workflow.mdc
+caseflow skill --print   # 网页版大模型 / 无客户端：直接打印工作流规则全文方便复制粘贴
 ```
-AI 按 aigen/draft_rules.md 写 cases/*.yaml
-  → python -m aigen validate     格式 + 出处核对（引用的接口、状态码、验收编号必须真实存在）
-  → 新会话按 review_rules.md 审   不由起草的会话自审
-  → python -m aigen approve cases/x.yaml   登记这批文件的指纹、等待签字（Agent 可运行）
-  → 人评审（含 pending），在 cases/approvals.json 顶层 "sign" 填一次自己的名字 = 签字
-  → python -m aigen render       YAML → testcase/api_gen/、testcase/ui_gen/（只生成已签字且没被改过的）
-  → python -m aigen trace        用例与代码一致、PRD 每条验收都有用例
-  → pytest testcase/api_gen
-  → python -m aigen mutate       断言区分力（报 [WEAK] 就加强断言）
-  → python -m aigen export       用例表.md / 用例表.csv / 验收覆盖.md
-```
-
-- 起草可以在 IDE 里让 Agent 做（推荐），也可以用 `python -m aigen draft <module>` 批量调模型：复制 `aigen\.env.example` 为项目根 `.env` 填模型地址和密钥，并把 `.env` 加进 `.gitignore`。
-- CI 用 `python -m aigen check`（validate + trace（含是否已批准）+ selftest + 运行接口用例 + mutate + 程序闸评测；任一失败或有 `[WEAK]` 断言即退出码非 0）。UI 用例不在 check 里，CI 需单独跑 `pytest testcase/ui_gen`。
-- 闸评测：`python -m aigen eval`（程序闸）/ `eval --ai`（AI 审核员，可 `--dry-run` 只出提示词交给任意 Agent，再 `--answers` 读回打分）。样本格式和用法见 `aigen/examples/evals/README.md`。
-- 签字记录在 `cases/approvals.json`，要提交进 git。顶层 `sign` 是评审人本次签名（生效后程序清空），`files` 里记每个文件的指纹和这一版的签字人。签字用于追责和找人，不是鉴权；Agent 不得填写 `sign`。一次签名只覆盖这次登记且内容没变的文件。团队里要强制「只有指定的人能签」，用 CODEOWNERS / 分支保护守住这个文件。
-- 不用 aigen 的项目，CI 至少跑一遍 pytest 全量，并按 WF-7 扫描「只 assert status」的用例。
-- 生成的代码不要手改；要改就改 YAML 再 render。
-
-已知限制：UI 只支持 Playwright；UI 断言不做变异检查；签名类鉴权需自己写客户端类（`api.client_class`）；不支持流式响应、GraphQL、gRPC。
 
 ---
 
-## 项目里要准备 / 按团队调整的东西
+## 二、 7 个常用命令
 
-技能会在项目里读写下面这些约定，第一次用时按需建好：
+| 命令 | 作用 |
+|---|---|
+| `caseflow init [目录]` | 在业务项目初始化纯净骨架（`caseflow.yaml`、`.env.example`、`conftest.py`、`PROJECT_MAP.md`、防泄密 `.gitignore`） |
+| `caseflow skill` | 跨平台安装工作流技能到通用目录（支持 `--agents` / `--cursor` / `--print`） |
+| `caseflow auth <登录URL>` | 弹出浏览器让你手动过验证码登录后按回车，自动保存 `.auth/user.json` 免登录运行 UI 用例 |
+| `caseflow dom <URL> [-o 页.md]` | 提取瘦身交互元素树与无障碍树（约 1~2.5k Token），喂给 AI 写 Page Object |
+| `caseflow dom <登录URL> -i` | **交互式抓多页**：浏览器里手动点完上游步骤（如加购后进结算页），回终端输页面名回车抓取，输入 `q` 退出 |
+| `caseflow export` | 反向扫描 `data/*.yaml` 和 `tests/**/test_*.py`，生成 `reports/用例表.csv`（Excel 直接打开）和 `用例表.md` |
+| `caseflow mutate [路径]` | 故意把响应改空或翻转状态码/业务码重跑接口用例，揪出「只测 200」的假绿用例 |
+| `caseflow selftest` | 运行框架自身离线自检测试 |
 
-| 约定 | 用途 | 对应工作流 |
-|------|------|------------|
-| 项目 `agents.md` 里的签字角色表 | 每道人工闸由谁签。技能里的表是默认分工（产品答业务口径、开发答契约、测试签其余各闸），**项目表优先** | 技能「人工闸与签字角色」 |
-| `docs/待确认.md` | gap / pending 落盘：问谁、提出日期、答复、回写位置；答复后不删行 | WF-2 ⑦ |
-| `docs/度量.md` | 每迭代一行：pending 关闭时长、fix loop 达上限比例、弱断言占比 | 技能「度量」 |
-| `pytest.ini` 注册 `smoke` / `core` mark | 冒烟排除环境问题、按改动选回归范围 | WF-4 |
-| 项目根 `REVIEW.md`（可选） | 本项目里「测试失败长什么样」、要跳过的路径；叠加在 `review_rules.md` 之后，冲突时以它为准 | 技能「证据与独立审查」 |
-| `evals/<样本id>/` | 闸评测样本：闸漏掉、后来被人确认的问题，以及确认没问题的用例；含业务材料，**不进公开仓库** | 技能「闸漏了要补样本」 |
-| `docs/闸评测.md` | `aigen eval --ai` 自动追加分数，换模型或改审查规则后对比 | 技能「度量」 |
+---
 
-## 从 2.1 升级
+## 三、 快速体验内置靶场示例（无需公司环境）
 
-- **render 和 check 要求先签字**：已有的 `cases/*.yaml` 升级后全部视为未登记，`render` 会跳过、`trace` / `check` 会失败。运行一次 `python -m aigen approve`（不带文件 = 登记 `cases/` 下全部，Agent 可代跑），评审人看过后在 `cases/approvals.json` 顶层 `"sign"` 填一次名字，再提交这个文件。旧格式（每个文件一个 `"by"`）在下一次 aigen 命令时自动换成新格式，已经签过的名字会保留。
-- 闸 2、WF-5、WF-7 改为交给新会话或子代理审，输出格式统一为 `review_rules.md` 里的 JSON 发现清单。
-- 新增 `aigen eval` 和 `aigen/examples/evals/`；项目有 `evals/` 目录时，`check` 会带上程序闸评测。
+仓库自带 [examples/](examples/) 离线迷你商城靶场（模拟非标 PRD + 国内 `code: 0` 接口 + 登录/加购/结算上游依赖）：
 
-## 从 2.0 升级
+```powershell
+cd examples
+pytest -v                 # 自动拉起本地商城服务，跑通接口数据驱动 + 多步流 + UI 结算用例
+caseflow export           # 查看生成的 examples/reports/用例表.csv 和 用例表.md
+caseflow mutate tests/api # 验证接口断言区分力
+```
 
-- **`aigen check` 变严了**：现在会运行接口用例并做 `mutate`，所以 CI 必须能连到被测环境；用例失败或有 `[WEAK]` 断言都会让 check 失败。原来能过的 CI 升级后可能变红，先本地跑一遍 `python -m aigen check`。
-- **产品缺陷不再用 skip**：改为 `xfail(strict=True)` + 缺陷单号（YAML 模式写 `known_issue`）；skip 只用于环境或前置条件不具备。已有的 skip 建议按此复查。
-- **用例覆盖按风险分级**：替代原来固定的「每接口 1 正 3 反」。
-- `rules/ai-testing-workflow.mdc` 和 `user-rules.txt` 精简为一句「执行技能 ai-testing」，内容以技能为准；粘贴过旧版 `user-rules.txt` 的，请到 Cursor Settings → Rules 替换。
+---
 
-## 验证安装
+## 四、 新项目落地 5 分钟上手流程
 
-新开 Agent，输入：
+1. **初始化项目**：在新项目目录执行 `caseflow init`，复制 `.env.example` 为 `.env` 填入测试地址与账号，按项目情况修改 `caseflow.yaml`（如国内项目保持 `envelope: {code: code, ok: 0, msg: msg, data: data}`）。
+2. **梳理模块与上下游依赖**：让 AI 读已有文档/页面，把模块划分、上下游依赖矩阵写进 `PROJECT_MAP.md`。
+3. **提纲 + 选择题拍板**：让 AI 先出 10～20 行带 `[AUTO]` 标记的测试点提纲并把模糊点做成选择题；你花 2 分钟拍板后再生成用例和代码。
+4. **双轨落地**：
+   - **UI**：`caseflow auth --name user` 存多角色登录态（用 `page_as("user")` 隔离干净的 `page`）→ `caseflow dom -i` 或 `playwright codegen` 获取目标页元素 → 生成 PO 与 Web-First 断言的原生 pytest（前置造数与清脏数据优先调接口 `client()`）。
+   - **接口**：单接口多参数写进 `data/*.yaml`（支持 `base_json` + `drop` 测必填缺失、`xfail` 探活与 `xfail_strict` 标已知缺陷）用 `load_cases` + `run_case` 跑；多步业务流直接写原生 pytest 调用 `client("user")` 与 `gen.*()`。
+5. **验收与出表**：每完成一个模块跑一次全量 `pytest` + `caseflow mutate`，随时用 `caseflow export` 导出最新用例表交差。
 
-> 按框架，帮我写个生成接口用例的四段式提示词
+---
 
-应输出四段式模板 + 评审清单自评。
+## 五、 从旧版 v2.2 找回历史代码
+
+如需查阅重构前的 `aigen`（含 YAML DSL 编译器、`approvals.json` 签字和 `evals` 闸评测）：
+
+```powershell
+git checkout v2.2-archive
+```

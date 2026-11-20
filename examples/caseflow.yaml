@@ -1,0 +1,21 @@
+api:
+  base_url: ${API_BASE_URL}
+  timeout: 10
+  envelope: {code: code, ok: 0, msg: msg, data: data}
+  login:
+    method: POST
+    path: /api/login
+    user_field: username
+    password_field: password
+    token_path: data.token
+    header: Authorization
+    prefix: "Bearer "
+  roles:
+    user: {user: "${USER_NAME}", password: "${USER_PASSWORD}"}
+
+ui:
+  base_url: ${UI_BASE_URL}
+  auth_dir: .auth
+
+safety:
+  block_host_words: [prod, production, live, online]

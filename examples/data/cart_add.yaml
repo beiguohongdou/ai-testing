@@ -1,0 +1,37 @@
+api: POST /api/cart
+role: user
+
+cases:
+  - id: TC-CART-01
+    title: 正常加入购物车
+    json: {product_id: "p1", qty: 2}
+    expect:
+      status: 200
+      ok: true
+      body:
+        data.total: 598
+        data.items: {len_gt: 0}
+
+  - id: TC-CART-02
+    title: 加购数量为0被拒
+    json: {product_id: "p1", qty: 0}
+    expect:
+      status: 200
+      code: 10001
+      body: {msg: {contains: 数量}}
+
+  - id: TC-CART-03
+    title: 商品不存在被拒
+    json: {product_id: "no_such_id", qty: 1}
+    expect:
+      status: 200
+      code: 10404
+      body: {msg: {contains: 不存在}}
+
+  - id: TC-CART-04
+    title: 超出库存被拒（文档漏写错误码，先探活校准）
+    json: {product_id: "p1", qty: 999}
+    expect:
+      code: 10009
+      body: {msg: {contains: 库存}}
+    xfail: 接口文档漏写超库存错误码，先用 10009 探活（实测后改为真实错误码并去掉此行）
