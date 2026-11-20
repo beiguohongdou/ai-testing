@@ -1,7 +1,7 @@
 # caseflow（AI 测试提效框架 v3 个人实战版）
 
 > **版本** 3.0 | 许可证 MIT  
-> 配套技能：`caseflow/SKILL.md`（通过 `caseflow skill` 安装或打印） | 旧版 v2.2 归档在 Git Tag `v2.2-archive`
+> 配套技能：`caseflow/SKILL.md`（通过 `caseflow skill` 安装或打印）
 
 一个专门帮个人测试工程师落地的轻量框架：**需求/接口文档/抓包 → 测试用例提纲拍板 → Playwright UI + 接口双轨自动化 → 反向导出 Excel 用例表**。
 
@@ -83,13 +83,3 @@ caseflow mutate tests/api # 验证接口断言区分力
    - **UI**：`caseflow auth --name user` 存多角色登录态（用 `page_as("user")` 隔离干净的 `page`）→ `caseflow dom -i` 或 `playwright codegen` 获取目标页元素 → 生成 PO 与 Web-First 断言的原生 pytest（前置造数与清脏数据优先调接口 `client()`）。
    - **接口**：单接口多参数写进 `data/*.yaml`（支持 `base_json` + `drop` 测必填缺失、`xfail` 探活与 `xfail_strict` 标已知缺陷）用 `load_cases` + `run_case` 跑；多步业务流直接写原生 pytest 调用 `client("user")` 与 `gen.*()`。
 5. **验收与出表**：每完成一个模块跑一次全量 `pytest` + `caseflow mutate`，随时用 `caseflow export` 导出最新用例表交差。
-
----
-
-## 五、 从旧版 v2.2 找回历史代码
-
-如需查阅重构前的 `aigen`（含 YAML DSL 编译器、`approvals.json` 签字和 `evals` 闸评测）：
-
-```powershell
-git checkout v2.2-archive
-```
