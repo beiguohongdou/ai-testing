@@ -17,6 +17,9 @@
 
 ## 3. 生成 PO 与原生 Playwright 用例的铁律
 
+- **PO 一页一文件**：`pages/` 下按页面拆文件（如 `pages/login_page.py`、`pages/register_page.py`），每个文件只放 1 个 Page Object 类；PO 构造只接收 `page: Page`，直接用相对路径 `page.goto("/path")`（利用 `browser_context_args` 的 `base_url`），不在用例里手传 `base_url`。
+- **一函数一场景 + 按业务类分组**：用 `class TestXxx:` 按模块分组，每条 `test_*` 只测 1 个明确场景（6~15 行一眼可读）；禁止在一条用例里塞多角色串测，禁止在用例体里手写 `browser.new_context()` 或 `setting(...)`。
+- **清理统一进 `fixture` teardown（`yield`）**：删除临时账号、恢复账号资料、清空购物车等统一放 `conftest.py` 的 `yield` fixture 后置，用例体内不写 `try ... finally`。
 - **先做映射表，再写代码**：拿到瘦身 DOM 后，先对照测试步骤确认「每一步操作/断言对应 DOM 里的哪个 `data-testid` / `role` / `label`」，找不到就直接提示「页面缺该元素（可能缺上游状态）」，**严禁凭想象编造定位器**。
 - **定位器优先级**：`get_by_test_id` > `get_by_role(..., name=...)` > `get_by_label` > `get_by_placeholder` > 稳定 `id`/`name`；避开动态长数字 id、`.nth()` 和样式类名。
 - **反脆弱铁律**：

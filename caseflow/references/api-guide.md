@@ -9,10 +9,12 @@
   - 在 `tests/api/test_xxx.py` 只写 `@pytest.mark.parametrize("case", load_cases("data/xxx.yaml"))` + `run_case(case)`；改完 YAML 直接 `pytest`，**无需编译生成步骤**。
   - YAML 动态占位符：`${unique}`、`${phone}`、`${timestamp}` / `${timestamp:ms}`、`${today:-1d}`、`${now}`、`${len:255}`、`${alpha:8}`、`${digits:6}`，同条用例复用写进 `vars`。
 - **多步业务流（建单→支付→查单→清理）/ 需要条件分支或加解密 → 直接写原生 Python**：
+  - 按业务模块用 `class TestXxx:` 分组，每条 `test_*` 只聚焦一个清晰业务场景（docstring 第一行写 `编号 标题`）。
+  - 底层协议/算法辅助函数（如 JWT 解析、TOTP 计算）抽离到 `utils/` 或 `conftest.py` 的 fixture，用例正文只保留直观的业务步骤与链式断言。
   - 使用 `api = client("user")`（进程内按角色自动复用登录，不触发限流）。
   - Python 代码直接 `from caseflow import gen` 调用 `gen.unique()`、`gen.today("-18y+1d")`、`gen.phone()`、`gen.text(251)`，不必绕弯调用 `fill("${unique}", {})`。
   - 链式断言：`resp.expect_ok().expect("data.id", exists=True)` 或 `resp.expect_code(10001)`（兼容国内 HTTP 200 + `body.code` 信封）。
-  - 测试造出的资源放在 `try ... finally` 里调删除接口清理；清理失败可忽略或打警告，不掩盖主流程失败。
+  - **清理统一进 `fixture` teardown（`yield`）**：在 `conftest.py` 编写清理/恢复型 `yield` fixture（清理失败可忽略或打警告，不掩盖主流程失败），减少或避免在用例体内手写 `try ... finally`。
 
 ## 2. 文档漏写错误码 / 已知缺陷 → `xfail` 与 `xfail_strict`
 
