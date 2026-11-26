@@ -34,6 +34,7 @@ ui:
 
 safety:
   block_host_words: [prod, production, live, online]   # 主机名含这些词时拒绝发写请求
+  # allow_hosts: ["127.0.0.1", "localhost", "*.test.local"]  # 可选白名单：配置后仅允许匹配域名发写请求
 """
 
 ENV_EXAMPLE = """\
@@ -58,6 +59,7 @@ CONFTEST = '''\
 import pytest
 
 from caseflow.config import setting
+from caseflow.plugin import attach_ui_diagnostics
 from caseflow.ui import auth_path
 
 pytest_plugins = ["caseflow.plugin"]
@@ -72,22 +74,26 @@ def browser_context_args(browser_context_args):
 
 
 @pytest.fixture
-def page_as(browser, browser_context_args):
+def page_as(request, browser, browser_context_args):
     """按角色取已登录页面（读取 caseflow auth 保存的 .auth/<role>.json），与干净 page 隔离：
 
         def test_order(page_as):
             page = page_as("user")
     """
-    contexts = []
+    contexts, flushes = [], []
 
     def _open(role: str = "user"):
         state = auth_path(role)
         kw = {**browser_context_args, **({"storage_state": str(state)} if state.is_file() else {})}
         ctx = browser.new_context(**kw)
+        page = ctx.new_page()
         contexts.append(ctx)
-        return ctx.new_page()
+        flushes.append(attach_ui_diagnostics(request, page, tag=f"{role}_{len(flushes) + 1}"))
+        return page
 
     yield _open
+    for flush in flushes:
+        flush()
     for ctx in contexts:
         ctx.close()
 '''
@@ -166,5 +172,8 @@ def init(target: str = ".") -> int:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         print(f"[OK]   {rel}")
-    print(f"\n下一步：复制 .env.example 为 .env 填地址和账号；改 caseflow.yaml 的登录方式；然后 pytest")
+    print("\n下一步：\n"
+          "1. 复制 .env.example 为 .env 填入测试地址和账号，并按需调整 caseflow.yaml；\n"
+          "2. 运行 `git init && git add . && git commit -m init`（启用 caseflow guard / mutate --changed）；\n"
+          "3. 运行 `caseflow skill` 安装 AI 工作流技能；UI 复用本机 Chrome 可加 `--browser-channel chrome`。")
     return 0

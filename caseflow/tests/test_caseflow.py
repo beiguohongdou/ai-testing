@@ -15,9 +15,9 @@ from pathlib import Path
 import pytest
 import requests
 
-from caseflow import config, data, export, mutate, runtime, scaffold, skill, ui
+from caseflow import config, data, export, guard, mutate, plugin, runtime, scaffold, skill, ui
 from caseflow.config import ConfigError, env, setting
-from caseflow.runtime import Client, Resp, client, dig, fill, gen, on_fail, to_curl
+from caseflow.runtime import Client, Resp, client, diff_response, dig, fill, gen, on_fail, to_curl
 
 
 # ---------------------------------------------------------------- 本地 Mock 服务
@@ -25,6 +25,7 @@ from caseflow.runtime import Client, Resp, client, dig, fill, gen, on_fail, to_c
 class _MockState:
     def __init__(self):
         self.login_calls = 0
+        self.echo_calls = 0
         self.items: dict[str, dict] = {"1": {"id": "1", "name": "初始商品", "price": 10}}
         self.seq = 1
 
@@ -72,6 +73,7 @@ def _start_mock_server():
 
         def do_GET(self):
             if self.path == "/api/echo":
+                state.echo_calls += 1
                 return self._send(200, {
                     "code": 0, "msg": "ok",
                     "data": {
@@ -618,7 +620,9 @@ def test_skill_install_and_print(tmp_path, capsys):
     # 默认只安装通用全局技能，绝不往项目里塞 .cursor 或 AGENTS.md
     assert skill.install_skill(home=fake_home, target=str(proj)) == 0
     assert (fake_home / ".agents" / "skills" / "ai-testing" / "SKILL.md").is_file()
+    assert (fake_home / ".agents" / "skills" / "ai-testing" / "references" / "ui-guide.md").is_file()
     assert (fake_home / ".claude" / "skills" / "ai-testing" / "SKILL.md").is_file()
+    assert (fake_home / ".claude" / "skills" / "ai-testing" / "references" / "api-guide.md").is_file()
     assert not (proj / ".cursor").exists() and not (proj / "AGENTS.md").exists()
 
     # --cursor 和 --agents 按需写入，且已有 AGENTS.md 不覆盖
@@ -630,3 +634,147 @@ def test_skill_install_and_print(tmp_path, capsys):
     assert skill.install_skill(agents=True, home=fake_home, target=str(proj)) == 0
     assert "[SKIP]" in capsys.readouterr().out
     assert (proj / "AGENTS.md").read_text(encoding="utf-8") == "# my agents\n"
+
+
+def test_guard_scan_diff_and_allow(demo_proj, monkeypatch, capsys):
+    root, _, _ = demo_proj
+    sample_diff = """diff --git a/tests/api/test_demo.py b/tests/api/test_demo.py
+--- a/tests/api/test_demo.py
++++ b/tests/api/test_demo.py
+@@ -1,4 +1,5 @@
+-    assert resp.data["total"] == 100
++    @pytest.mark.skip(reason="flaky")
++    # assert comment only
+diff --git a/data/demo.yaml b/data/demo.yaml
+--- a/data/demo.yaml
++++ b/data/demo.yaml
+@@ -1,3 +1,4 @@
+-    expect: {code: 0}
++    xfail: 临时跳过
+"""
+    findings = guard.scan_diff(sample_diff)
+    assert len(findings) == 4
+    assert any("[DEL-ASSERT]" in x for x in findings)
+    assert any("[ADD-SKIP]" in x for x in findings)
+    assert any("[MOD-EXPECT]" in x for x in findings)
+    assert any("[ADD-XFAIL]" in x for x in findings)
+
+    monkeypatch.setattr(guard, "_git_diff", lambda r, b: (0, sample_diff, ""))
+    assert guard.main() == 1
+    assert "[BLOCKED]" in capsys.readouterr().out
+    assert guard.main(allow=True) == 0
+    assert "[ALLOW]" in capsys.readouterr().out
+
+
+def test_mutate_observe_mode_and_diff_response(demo_proj):
+    root, state, _ = demo_proj
+    state.echo_calls = 0
+    (root / "tests" / "api").mkdir(parents=True)
+    (root / "tests" / "api" / "test_weak.py").write_text(
+        'from caseflow import client\n'
+        'def test_only_status():\n'
+        '    client(None).get("/api/echo").expect_status(200)\n',
+        encoding="utf-8",
+    )
+    assert mutate.main(["tests/api/test_weak.py"]) == 1
+    assert state.echo_calls == 1  # 基线打 1 次真实请求，4 个变异体全部本地 tape 回放
+    assert mutate.main(["tests/api/test_weak.py"], observe=True) == 0
+    assert state.echo_calls == 2  # 第二次跑基线打 1 次，变异回放不增发
+
+    def _fake_resp(status: int, payload: dict) -> Resp:
+        raw = type("Raw", (), {"status_code": status, "text": json.dumps(payload), "json": lambda self: payload})()
+        return Resp(raw)
+
+    r1 = _fake_resp(200, {"code": 0, "timestamp": 111, "data": {"id": 1}})
+    r2 = _fake_resp(200, {"code": 0, "timestamp": 222, "data": {"id": 1}})
+    r3 = _fake_resp(200, {"code": 0, "timestamp": 222, "data": {"id": 2}})
+    assert diff_response(r1, r2) == []
+    with pytest.raises(AssertionError, match="data.id"):
+        diff_response(r1, r3)
+
+    assert ui._format_dom_doc("# Page", "") == "# Page"
+    assert ui._format_dom_doc("# Page", "点提交后弹出订单号").startswith("> **检查点备忘**：点提交后弹出订单号\n\n# Page")
+
+
+def test_dotenv_allow_hosts_secret_and_page_as_diagnostics(demo_proj, monkeypatch):
+    root, _, _ = demo_proj
+    (root / ".env").write_text(
+        'export EXPORTED=ok # trailing comment\n'
+        'QUOTED_HASH="Sec#123"\n'
+        "UNMATCHED_QUOTE='abc\n"
+        'USER_NAME=admin\n'
+        'USER_PASSWORD="Secret#123"\n',
+        encoding="utf-8",
+    )
+    config.reset()
+    assert env("EXPORTED") == "ok"
+    assert env("QUOTED_HASH") == "Sec#123"
+    assert env("UNMATCHED_QUOTE") == "'abc"
+
+    # 用户名叫 admin 不应误伤 YAML 里出现 role: "admin"，但密码明文仍应拦截
+    (root / "data").mkdir(exist_ok=True)
+    (root / "data" / "role_ok.yaml").write_text(
+        'api: POST /api/items\nrole: user\ncases:\n'
+        '  - id: TC-1\n    title: 正常字段包含admin\n    json: {name: "admin"}\n    expect: {ok: true}\n',
+        encoding="utf-8",
+    )
+    assert len(data.read_cases("data/role_ok.yaml")) == 1
+    (root / "data" / "role_bad.yaml").write_text(
+        'api: POST /api/items\nrole: user\ncases:\n'
+        '  - id: TC-2\n    title: 泄露密码\n    json: {name: "Secret#123"}\n    expect: {ok: true}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="出现账号/密码明文"):
+        data.read_cases("data/role_bad.yaml")
+
+    # safety.allow_hosts 白名单生效：不含 prod 字样的域名也会被拦
+    raw_cfg = (root / "caseflow.yaml").read_text(encoding="utf-8")
+    (root / "caseflow.yaml").write_text(
+        raw_cfg + '\nsafety:\n  allow_hosts: ["127.0.0.1", "*.test.local"]\n',
+        encoding="utf-8",
+    )
+    config.reset()
+    called = []
+    monkeypatch.setattr(
+        requests.Session, "request",
+        lambda self, m, u, **kw: called.append((m, u)) or type("R", (), {
+            "status_code": 200, "text": "{}", "headers": {}, "request": None, "json": lambda self: {},
+        })(),
+    )
+    blocked_api = Client(None, base_url="https://api.company.com")
+    with pytest.raises(ConfigError, match="拒绝向疑似生产环境"):
+        blocked_api.post("/orders", json={"x": 1})
+    Client(None, base_url="https://api.test.local").post("/orders", json={"x": 1})
+    assert len(called) == 1
+
+    # 非默认 page fixture（如 page_as）失败时也能生成 UI 诊断包
+    events = {}
+    sections = []
+
+    class _FakePage:
+        url = "http://localhost/checkout"
+
+        def on(self, ev, cb):
+            events[ev] = cb
+
+        def screenshot(self, path, full_page=True):
+            Path(path).write_bytes(b"png")
+
+    class _FakeNode:
+        nodeid = "tests/ui/test_page_as.py::test_demo"
+        _caseflow_rep_call = type("Rep", (), {"failed": True})()
+
+        def add_report_section(self, *args):
+            sections.append(args)
+
+    req = type("Req", (), {"node": _FakeNode()})()
+    flush = plugin.attach_ui_diagnostics(req, _FakePage(), tag="user_1")
+    events["console"](type("Msg", (), {"type": "error", "text": "boom"})())
+    events["response"](type("Res", (), {"status": 500, "url": "http://x/api", "request": type("Q", (), {"method": "POST"})()})())
+    flush()
+    flush()  # 重复调用不重复写
+    md_file = root / "reports" / "ui" / "tests_ui_test_page_as_py_test_demo_user_1.md"
+    assert md_file.is_file()
+    content = md_file.read_text(encoding="utf-8")
+    assert "500 POST http://x/api" in content and "[error] boom" in content
+    assert len(sections) == 1

@@ -121,6 +121,11 @@ def extract_dom(url: str | None = None, auth: str | None = None, selector: str =
     return text
 
 
+def _format_dom_doc(text: str, note: str = "") -> str:
+    note = note.strip()
+    return f"> **检查点备忘**：{note}\n\n{text}" if note else text
+
+
 def capture_dom_interactive(url: str, auth: str | None = None, selector: str = "body",
                             out_dir: str = "reports/dom") -> list[Path]:
     """打开有界面浏览器，手动走完上游业务操作（如登录 → 加购 → 打开弹窗）再抓取当前页瘦身 DOM，输入 q 结束。"""
@@ -148,14 +153,19 @@ def capture_dom_interactive(url: str, auth: str | None = None, selector: str = "
                 break
             name = re.sub(r"[^\w\u4e00-\u9fff-]+", "_", raw).strip("_") or f"page_{idx}"
             try:
+                note = input("本页操作意图 / 看到什么算成功（可选，直接回车跳过）：").strip()
+            except EOFError:
+                note = ""
+            try:
                 text = slim_dom(page, selector)
             except Exception as e:
                 print(f"[FAIL] 抓取失败（可切回目标页后再试）：{e}")
                 continue
+            doc = _format_dom_doc(text, note)
             target = dest / f"{name}.md"
-            target.write_text(text, encoding="utf-8")
+            target.write_text(doc, encoding="utf-8")
             saved.append(target)
-            print(f"[OK] 已保存 {target}（约 {len(text) // 2} token）")
+            print(f"[OK] 已保存 {target}（约 {len(doc) // 2} token）")
             idx += 1
         browser.close()
     return saved

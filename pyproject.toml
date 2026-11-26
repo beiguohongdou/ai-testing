@@ -25,4 +25,4 @@ caseflow = "caseflow.cli:main"
 include = ["caseflow*"]
 
 [tool.setuptools.package-data]
-caseflow = ["SKILL.md"]
+caseflow = ["SKILL.md", "references/*.md"]

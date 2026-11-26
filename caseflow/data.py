@@ -66,11 +66,16 @@ class Case:
         return f"{self.id} {self.title}"
 
 
+_SECRET_KEYS = {"password", "pwd", "passwd", "secret", "token", "access_token", "refresh_token", "api_key"}
+
+
 def _credential_values() -> list[str]:
-    """api.roles 里配置的账号密码真实值（用来拦截 YAML 里的明文）。"""
+    """api.roles 里配置的密码/密钥真实值（用来拦截 YAML 里的明文）。"""
     out = []
     for cred in (config()["api"].get("roles") or {}).values():
-        for raw in (cred or {}).values():
+        for k, raw in (cred or {}).items():
+            if str(k).lower() not in _SECRET_KEYS:
+                continue
             name = str(raw).strip("${}") if str(raw).startswith("${") else None
             value = env(name) if name else str(raw)
             if value and len(value) >= 4:

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import calendar
+import fnmatch
 import importlib
 import json
 import os
@@ -391,9 +392,77 @@ def _mutate(resp: Resp, name: str) -> None:
 # ---------------------------------------------------------------- 客户端
 
 def _host_blocked(url: str) -> bool:
-    words = {w.lower() for w in setting("safety", "block_host_words", default=[])}
     host = (urlparse(url).hostname or "").lower()
+    allow = setting("safety", "allow_hosts", default=[]) or []
+    if allow:
+        return not any(fnmatch.fnmatch(host, str(pat).lower()) for pat in allow)
+    words = {w.lower() for w in setting("safety", "block_host_words", default=[])}
     return bool(words & set(re.split(r"[.\-]", host)))
+
+
+_TAPE_SEQ: dict[str, int] = {}
+_TAPE_CACHE: dict[tuple[str, int], dict[tuple[str, int], dict]] = {}
+
+
+def _current_test_id() -> str:
+    return os.environ.get("PYTEST_CURRENT_TEST", "").rsplit(" ", 1)[0] or "__global__"
+
+
+def _next_tape_seq(test_id: str) -> int:
+    seq = _TAPE_SEQ.get(test_id, 0) + 1
+    _TAPE_SEQ[test_id] = seq
+    return seq
+
+
+def _load_tape(path: str) -> dict[tuple[str, int], dict]:
+    p = os.path.abspath(path)
+    try:
+        mtime = os.stat(p).st_mtime_ns
+    except OSError:
+        return {}
+    key = (p, mtime)
+    if key not in _TAPE_CACHE:
+        entries: dict[tuple[str, int], dict] = {}
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    item = json.loads(line)
+                    entries[(item["test"], int(item["seq"]))] = item
+        _TAPE_CACHE[key] = entries
+    return _TAPE_CACHE[key]
+
+
+def _record_tape(path: str, test_id: str, seq: int, method: str, url: str, raw: requests.Response) -> None:
+    entry = {
+        "test": test_id,
+        "seq": seq,
+        "method": method,
+        "url": url,
+        "status": raw.status_code,
+        "text": raw.text,
+        "headers": dict(raw.headers or {}),
+    }
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+class _FakeReq:
+    def __init__(self, method: str, url: str, headers: dict, body: Any = None):
+        self.method = method
+        self.url = url
+        self.headers = dict(headers)
+        self.body = body
+
+
+class _FakeRawResponse:
+    def __init__(self, status_code: int, text: str, headers: dict, req: _FakeReq):
+        self.status_code = status_code
+        self.text = text
+        self.headers = headers
+        self.request = req
+
+    def json(self) -> Any:
+        return json.loads(self.text)
 
 
 class Client:
@@ -427,7 +496,24 @@ class Client:
         kw.setdefault("timeout", self.timeout)
         if self._hook:
             kw = self._hook(method, url, kw) or kw
-        resp = Resp(self.session.request(method, url, **kw), self.envelope)
+        record_path = os.environ.get("CASEFLOW_TAPE_RECORD")
+        replay_path = os.environ.get("CASEFLOW_TAPE_REPLAY")
+        raw = None
+        if record_path or replay_path:
+            test_id = _current_test_id()
+            seq = _next_tape_seq(test_id)
+            if replay_path:
+                hit = _load_tape(replay_path).get((test_id, seq))
+                if hit and hit.get("method") == method:
+                    req_headers = {**self.session.headers, **(kw.get("headers") or {})}
+                    req_body = json.dumps(kw["json"], ensure_ascii=False) if "json" in kw and kw["json"] is not None else None
+                    raw = _FakeRawResponse(hit["status"], hit["text"], hit.get("headers") or {},
+                                           _FakeReq(method, url, req_headers, req_body))
+        if raw is None:
+            raw = self.session.request(method, url, **kw)
+            if record_path:
+                _record_tape(record_path, test_id, seq, method, url, raw)
+        resp = Resp(raw, self.envelope)
         mutant = os.environ.get("CASEFLOW_MUTANT")
         if mutant and _kind == "step":
             _mutate(resp, mutant)
@@ -485,3 +571,52 @@ def client(role: str | None = None, fresh: bool = False) -> Client:
 
 def reset_clients() -> None:
     _CLIENTS.clear()
+    _TAPE_SEQ.clear()
+    _TAPE_CACHE.clear()
+
+
+def _strip_ignored(obj: Any, ignore: set[str]) -> Any:
+    if isinstance(obj, dict):
+        return {k: _strip_ignored(v, ignore) for k, v in obj.items() if k not in ignore}
+    if isinstance(obj, list):
+        return [_strip_ignored(v, ignore) for v in obj]
+    return obj
+
+
+def _collect_diffs(a: Any, b: Any, path: str = "$") -> list[str]:
+    if type(a) is not type(b):
+        return [f"{path}: 类型不同 {type(a).__name__}({_short(a, 60)}) != {type(b).__name__}({_short(b, 60)})"]
+    if isinstance(a, dict):
+        diffs: list[str] = []
+        for k in sorted(set(a) | set(b)):
+            if k not in a:
+                diffs.append(f"{path}.{k}: 左侧缺失，右侧={_short(b[k], 60)}")
+            elif k not in b:
+                diffs.append(f"{path}.{k}: 右侧缺失，左侧={_short(a[k], 60)}")
+            else:
+                diffs.extend(_collect_diffs(a[k], b[k], f"{path}.{k}"))
+        return diffs
+    if isinstance(a, list):
+        if len(a) != len(b):
+            return [f"{path}: 列表长度不同 {len(a)} != {len(b)}"]
+        diffs = []
+        for idx, (va, vb) in enumerate(zip(a, b)):
+            diffs.extend(_collect_diffs(va, vb, f"{path}[{idx}]"))
+        return diffs
+    if a != b:
+        return [f"{path}: {_short(a, 80)} != {_short(b, 80)}"]
+    return []
+
+
+def diff_response(resp_a: Resp, resp_b: Resp, ignore_keys: tuple[str, ...] | list[str] = (
+    "timestamp", "trace_id", "request_id"
+), assert_same: bool = True) -> list[str]:
+    """差分对比两个响应（忽略动态字段），用于新旧版本/双环境回归校验。"""
+    diffs: list[str] = []
+    if resp_a.status_code != resp_b.status_code:
+        diffs.append(f"status_code: {resp_a.status_code} != {resp_b.status_code}")
+    ignore = set(ignore_keys)
+    diffs.extend(_collect_diffs(_strip_ignored(resp_a.body, ignore), _strip_ignored(resp_b.body, ignore)))
+    if assert_same and diffs:
+        raise AssertionError("差分响应不一致：\n- " + "\n- ".join(diffs[:20]))
+    return diffs

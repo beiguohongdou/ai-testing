@@ -3,6 +3,8 @@
 > **版本** 3.0 | **Python** ≥ 3.10 | **许可证** MIT  
 > 配套 AI 工作流技能母版：[`caseflow/SKILL.md`](caseflow/SKILL.md)
 
+![caseflow 路线图](docs/caseflow_roadmap.png)
+
 一个轻量级 **AI 赋能接口 + Playwright UI 自动化测试提效框架**：把零散的需求/接口文档/抓包，按可控工作流落成稳定可运行的自动化测试与 Excel 用例表。
 
 ### 为什么做 `caseflow`？
@@ -62,7 +64,7 @@ caseflow skill --print   # 网页版大模型 / 无客户端：直接输出规�
 
 ---
 
-## 二、 常用命令（8 项）
+## 二、 常用命令（9 项）
 
 | 命令 | 作用 |
 |---|---|
@@ -70,9 +72,10 @@ caseflow skill --print   # 网页版大模型 / 无客户端：直接输出规�
 | `caseflow skill` | 跨平台安装或打印 AI 工作流技能（支持 `--agents` / `--cursor` / `--print`） |
 | `caseflow auth <登录URL>` | 打开浏览器手动过验证码登录后按回车，保存 `.auth/<name>.json` 免登录跑 UI |
 | `caseflow dom <URL> [-o 页.md]` | 提取单页瘦身交互元素与无障碍树（约 1~2.5k Token），喂给 AI 写 Page Object |
-| `caseflow dom <起始URL> -i` | **交互式抓多页**：在浏览器里手动走完上游步骤（如加购进结算页），回终端输页面名回车保存，输入 `q` 退出 |
+| `caseflow dom <起始URL> -i` | **交互式抓多页**：在浏览器里手动走完上游步骤，回终端输页面名并可顺手记「检查点备忘」，输入 `q` 退出 |
+| `caseflow guard` | 扫描 `git diff`，拦截擅自删改断言或私加 `skip/xfail`（人工确认后可加 `--allow` 放行） |
+| `caseflow mutate [路径]` | 基线跑一次并本地回放篡改响应体/状态码/业务码，揪出假绿用例（支持 `--observe` / `--changed`） |
 | `caseflow export` | 反向扫描 `data/*.yaml` 和 `tests/**/test_*.py`，生成 `reports/用例表.csv`（Excel 直接打开）和 `用例表.md` |
-| `caseflow mutate [路径]` | 故意清空响应体或翻转状态码/业务码重跑接口用例，揪出「只测 200」的假绿用例 |
 | `caseflow selftest` | 运行框架自身离线自检测试 |
 
 ---
@@ -120,4 +123,19 @@ caseflow mutate tests/api # 验证接口断言区分力
 4. **双轨落地**：
    - **UI**：`caseflow auth` 存多角色登录态（用 `page_as("user")` 隔离干净 `page`）→ `caseflow dom -i` 抓真实瘦身 DOM → 生成 PO 与 Web-First 断言（前置造数与清脏数据优先调接口 `client()`）。
    - **接口**：单接口多参数写进 `data/*.yaml`（支持 `base_json` + `drop` 测必填缺失、`xfail` 探活、`xfail_strict` 标已知缺陷）；多步业务流写原生 pytest 调用 `client()` 与 `gen.*()`。
-5. **验收与出表**：每完成一个模块跑一次全量 `pytest` + `caseflow mutate`，随时用 `caseflow export` 导出最新用例表。
+5. **验收与出表**：每完成一个模块跑一次全量 `pytest` + `caseflow guard` + `caseflow mutate`（大项目可用 `--changed`），随时用 `caseflow export` 导出最新用例表。
+
+---
+
+## 六、 常见问题（FAQ）
+
+1. **跑 UI 报 `Executable doesn't exist` 怎么办？**  
+   没下载 Playwright 自带 Chromium 时，直接复用本机 Chrome：`pytest --browser-channel chrome`（或在 `caseflow.yaml` 的 `ui:` 下取消注释 `channel: chrome`）。
+2. **接口不是 `code: 0` 信封（标准 RESTful）怎么配？**  
+   把 `caseflow.yaml` 里的 `api.envelope` 设为 `null`，并在 YAML/代码中改用 `status` / `expect_status()` 与 `body` 断言。
+3. **`caseflow guard` 或 `mutate --changed` 提示 `[SKIP] 无可用 Git 基准`？**  
+   项目目录尚未初始化 Git。在项目根执行一次 `git init && git add . && git commit -m "init"` 后即可启用。
+4. **登录态 `.auth/user.json` 过期了怎么办？**  
+   重新运行一次 `caseflow auth <登录URL>` 扫码/过验证码更新即可，无需改测试代码。
+5. **如何防止写请求误打到不含 `prod` 字样的真实生产域名？**  
+   在 `caseflow.yaml` 的 `safety:` 下配置白名单 `allow_hosts: ["127.0.0.1", "localhost", "*.test.local"]`，非白名单域名一律拒发写请求。

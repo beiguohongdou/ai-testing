@@ -37,10 +37,21 @@ def _dotenv(root: str) -> dict[str, str]:
     p = Path(root) / ".env"
     out: dict[str, str] = {}
     if p.is_file():
-        for line in p.read_text(encoding="utf-8").splitlines():
-            key, sep, value = line.strip().partition("=")
-            if sep and key and not key.startswith("#"):
-                out[key.strip()] = value.strip().strip("\"'")
+        for raw_line in p.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(("export ", "export\t")):
+                line = line[6:].lstrip()
+            key, sep, value = line.partition("=")
+            if not sep or not key.strip():
+                continue
+            val = value.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                parsed = val[1:-1]
+            else:
+                parsed = re.sub(r"\s+#.*$", "", val).strip()
+            out[key.strip()] = parsed
     return out
 
 
@@ -87,6 +98,8 @@ DEFAULTS: dict[str, Any] = {
     "safety": {
         # 主机名按 . 和 - 切开后命中这些词，就拒绝发非 GET 请求（防误打生产）；设 CASEFLOW_ALLOW_PROD=1 可放行
         "block_host_words": ["prod", "production", "live", "online"],
+        # 可选域名白名单（支持通配符如 *.test.local）；非空时仅允许匹配域名发写请求
+        "allow_hosts": [],
     },
     "redact": {
         "headers": ["authorization", "cookie", "x-api-key", "x-token", "token"],

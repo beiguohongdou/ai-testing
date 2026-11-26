@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>caseflow · AI 赋能测试框架路线图</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #e6ecf5;
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #1e293b;
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #poster {
+      width: 920px;
+      background: #f3f6fb;
+      border-radius: 20px;
+      padding: 36px 38px 30px;
+      box-shadow: 0 20px 50px rgba(15, 40, 84, 0.12);
+      border: 1px solid #dbe4f0;
+    }
+
+    /* 顶栏 */
+    .hero {
+      background: linear-gradient(135deg, #0f2854 0%, #1d4382 100%);
+      border-radius: 16px;
+      padding: 28px 32px;
+      color: #ffffff;
+      box-shadow: 0 10px 26px rgba(15, 40, 84, 0.22);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -40px;
+      top: -40px;
+      width: 220px;
+      height: 220px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 70%);
+      pointer-events: none;
+    }
+
+    .hero-tag {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.6px;
+      color: #bfdbfe;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+
+    .hero h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      line-height: 1.25;
+    }
+
+    .hero p {
+      font-size: 15px;
+      color: #dbeafe;
+      line-height: 1.5;
+    }
+
+    /* 阶段块 */
+    .stage {
+      margin-top: 24px;
+    }
+
+    .stage-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .stage-badge {
+      background: #ffffff;
+      color: #1d4382;
+      border: 1px solid #cbd5e1;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .stage-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f2854;
+    }
+
+    .stage-sub {
+      font-size: 13px;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    /* 卡片 */
+    .card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px 20px;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+    }
+
+    .step-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      min-width: 40px;
+      height: 36px;
+      padding: 0 8px;
+      border-radius: 9px;
+      background: #eef4ff;
+      color: #1d4ed8;
+      border: 1px solid #dbeafe;
+      font-size: 14px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+
+    .step-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .step-title-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .step-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .pill {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #1e40af;
+      background: #eff6ff;
+      border: 1px solid #dbeafe;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .pill.mono {
+      font-family: Consolas, "Courier New", monospace;
+      color: #334155;
+      background: #f1f5f9;
+      border-color: #e2e8f0;
+    }
+
+    .step-desc {
+      font-size: 13.5px;
+      color: #475569;
+      line-height: 1.6;
+    }
+
+    .step-desc code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12.5px;
+      background: #f1f5f9;
+      color: #0f2854;
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+
+    /* 箭头连接线 */
+    .flow-arrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0 6px 22px;
+      color: #64748b;
+      font-size: 12.5px;
+    }
+
+    .flow-arrow .arrow-sym {
+      color: #2563eb;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    /* 双列轨道 */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .track-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-top: 3px solid #1d4382;
+      border-radius: 12px;
+      padding: 16px 18px;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .track-card.api-track {
+      border-top-color: #0284c7;
+    }
+
+    .track-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .track-num {
+      padding: 3px 9px;
+      border-radius: 7px;
+      background: #eef4ff;
+      color: #1d4ed8;
+      border: 1px solid #dbeafe;
+      font-size: 12.5px;
+      font-weight: 800;
+    }
+
+    .track-card.api-track .track-num {
+      background: #ecfeff;
+      color: #0369a1;
+      border-color: #bae6fd;
+    }
+
+    .track-title {
+      font-size: 15.5px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .track-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .track-list li {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.55;
+      padding-left: 14px;
+      position: relative;
+    }
+
+    .track-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: #2563eb;
+      font-weight: 700;
+    }
+
+    .track-list code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      background: #f1f5f9;
+      color: #0f2854;
+      padding: 1px 4px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+
+    /* 结果分流双列 */
+    .outcome-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .outcome-box {
+      border-radius: 12px;
+      padding: 14px 18px;
+      border: 1px solid;
+    }
+
+    .outcome-pass {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+    }
+
+    .outcome-pass h4 {
+      color: #15803d;
+      font-size: 14.5px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .outcome-pass p {
+      color: #166534;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .outcome-fail {
+      background: #fffbeb;
+      border-color: #fde68a;
+    }
+
+    .outcome-fail h4 {
+      color: #b45309;
+      font-size: 14.5px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .outcome-fail p {
+      color: #92400e;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .outcome-box code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    /* 底部红线提示 */
+    .guard-bar {
+      margin-top: 14px;
+      background: #ffffff;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font-size: 13px;
+      color: #334155;
+      line-height: 1.5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .guard-bar strong {
+      color: #0f2854;
+    }
+
+    .guard-bar code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      background: #f1f5f9;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    /* 页脚 */
+    .footer {
+      margin-top: 18px;
+      padding-top: 12px;
+      border-top: 1px solid #dbe4f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      color: #64748b;
+    }
+
+    .footer .stack strong {
+      color: #334155;
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="poster">
+    <!-- 顶栏 -->
+    <div class="hero">
+      <div class="hero-tag">工作流程 · 公开分享版</div>
+      <h1>caseflow · AI 赋能测试框架</h1>
+      <p>把零散文档与抓包，变成有断言、防假绿、可复跑的接口与 UI 自动化资产</p>
+    </div>
+
+    <!-- 阶段一 -->
+    <div class="stage">
+      <div class="stage-header">
+        <span class="stage-badge">阶段一</span>
+        <span class="stage-title">需求对齐与素材准备</span>
+        <span class="stage-sub">先梳理、再拍板、防瞎编 · 极低 Token 消耗</span>
+      </div>
+
+      <div class="card step-card">
+        <div class="step-num">01</div>
+        <div class="step-body">
+          <div class="step-title-row">
+            <span class="step-title">项目地图与配置门禁</span>
+            <span class="pill">初始化 · 安全防呆</span>
+          </div>
+          <p class="step-desc">
+            运行 <code>caseflow init</code> 生成标准化骨架，用 <code>PROJECT_MAP.md</code> 梳理业务模块与上下游数据依赖；账号密钥统一置入 <code>.env</code> 占位脱敏，默认拦截疑似生产域名的非 GET 请求。
+          </p>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <span class="arrow-sym">↓</span>
+        <span>单模块推进 · 新开干净会话防上下文漂移</span>
+      </div>
+
+      <div class="card step-card">
+        <div class="step-num">02</div>
+        <div class="step-body">
+          <div class="step-title-row">
+            <span class="step-title">提纲、盲区与选择题拍板</span>
+            <span class="pill">AI 拆解 · 人工 2 分钟拍板</span>
+          </div>
+          <p class="step-desc">
+            严格按材料三态（双源 / 仅 PRD / 仅接口）禁止编造字段；先输出 10～20 行带 <code>[AUTO]</code> 标记的提纲，主动列出<strong>隐含盲区（Unknowns）</strong>与口径冲突选择题，人拍板后再落代码。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-arrow">
+      <span class="arrow-sym">↓</span>
+      <span>分工原则：UI 扛 20% 核心主干流，接口扛 80% 参数边界与多步流</span>
+    </div>
+
+    <!-- 阶段二 -->
+    <div class="stage" style="margin-top: 4px;">
+      <div class="stage-header">
+        <span class="stage-badge">阶段二</span>
+        <span class="stage-title">双轨自动化落地</span>
+        <span class="stage-sub">确定性工具底座 + 原生可调试 pytest</span>
+      </div>
+
+      <div class="two-col">
+        <div class="track-card">
+          <div class="track-head">
+            <span class="track-num">03A</span>
+            <span class="track-title">轨道 A · Playwright UI 自动化</span>
+          </div>
+          <ul class="track-list">
+            <li><strong>多角色登录隔离</strong>：<code>caseflow auth</code> 过验证码存 <code>.auth/*.json</code>，通过 <code>page_as</code> 隔离会话。</li>
+            <li><strong>瘦身 DOM + 检查点</strong>：<code>caseflow dom -i</code> 手动走完前置状态抓取 1～2.5k Token 骨架，顺手记下「检查点备忘」。</li>
+            <li><strong>反脆弱与造数</strong>：按真实 DOM 写 PO 与 Web-First 断言；前置造数优先调接口 <code>client()</code>。</li>
+          </ul>
+        </div>
+
+        <div class="track-card api-track">
+          <div class="track-head">
+            <span class="track-num">03B</span>
+            <span class="track-title">轨道 B · 接口自动化</span>
+          </div>
+          <ul class="track-list">
+            <li><strong>极简 YAML 数据驱动</strong>：单接口多参数走 <code>data/*.yaml</code>，支持 <code>base_json</code> + <code>drop</code>、动态占位符与 <code>xfail</code> 探活。</li>
+            <li><strong>多步流原生 Python</strong>：<code>api_as</code> 进程内复用登录 + <code>gen.*</code> 造数 + <code>finally</code> 清理，兼容 <code>code: 0</code> 信封。</li>
+            <li><strong>深度测试能力</strong>：支持 <code>diff_response</code> 差分比对、不变量性质测试与跨角色越权检查。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-arrow">
+      <span class="arrow-sym">↓</span>
+      <span>编码只是开始 · 硬门禁与证据验证后才纳入回归</span>
+    </div>
+
+    <!-- 阶段三 -->
+    <div class="stage" style="margin-top: 4px;">
+      <div class="stage-header">
+        <span class="stage-badge">阶段三</span>
+        <span class="stage-title">硬门禁验证、排查与交付</span>
+        <span class="stage-sub">要证据，不要声明 · 严防 AI 偷改预期凑绿灯</span>
+      </div>
+
+      <div class="card step-card">
+        <div class="step-num">04</div>
+        <div class="step-body">
+          <div class="step-title-row">
+            <span class="step-title">防改断言硬门禁</span>
+            <span class="pill mono">caseflow guard</span>
+          </div>
+          <p class="step-desc">
+            自动扫描 <code>git diff</code> 中对 <code>tests/</code> 与 <code>data/</code> 的修改，强力拦截擅自删减 <code>assert/expect</code>、改弱 YAML 预期或私加 <code>skip/xfail</code> 的作弊行为，人工确认后方可 <code>--allow</code> 放行。
+          </p>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <span class="arrow-sym">↓</span>
+      </div>
+
+      <div class="card step-card">
+        <div class="step-num">05</div>
+        <div class="step-body">
+          <div class="step-title-row">
+            <span class="step-title">防假绿变异与独立复核</span>
+            <span class="pill mono">caseflow mutate</span>
+          </div>
+          <p class="step-desc">
+            故意清空响应体或翻转状态码/业务码，揪出「只检查 HTTP 200」的假绿用例（支持 <code>--changed</code> 增量与 <code>--observe</code> 观察模式），并建议用干净会话独立复核 diff 与报告。
+          </p>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <span class="arrow-sym">↓</span>
+      </div>
+
+      <div class="card step-card">
+        <div class="step-num">06</div>
+        <div class="step-body">
+          <div class="step-title-row">
+            <span class="step-title">证据排查与反向出表</span>
+            <span class="pill mono">plugin · caseflow export</span>
+          </div>
+          <p class="step-desc">
+            UI 失败自动留存全屏截图 + 去重控制台报错 + HTTP ≥ 400 请求到 <code>reports/ui/</code>；接口失败自动生成脱敏 <code>curl</code> 复现命令；<code>caseflow export</code> 1 秒导出最新 Excel/Markdown 用例表。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 结果分流 -->
+    <div class="outcome-grid">
+      <div class="outcome-box outcome-pass">
+        <h4>✓ 通过 · 沉淀回归资产</h4>
+        <p><code>pytest</code>、<code>guard</code> 与 <code>mutate</code> 全部通过，更新 <code>PROJECT_MAP.md</code> 并导出最新用例表，纳入长期回归。</p>
+      </div>
+      <div class="outcome-box outcome-fail">
+        <h4>! 失败或未执行 · 先查根因</h4>
+        <p>先跑 <code>pytest -m smoke</code> 排环境，再看本机诊断包区分环境 / 数据 / 真 Bug（标 <code>xfail_strict</code>）或脚本问题。</p>
+      </div>
+    </div>
+
+    <!-- 底部红线 -->
+    <div class="guard-bar">
+      <span>↻</span>
+      <div>
+        <strong>核心铁律：</strong>只有确认是脚本问题才改代码；严禁删减断言凑绿灯；涉及下单/扣款等<strong>写入类用例禁止盲目自动重跑</strong>（<code>--reruns</code>），写入结果不明时停机核查。
+      </div>
+    </div>
+
+    <!-- 页脚 -->
+    <div class="footer">
+      <div class="stack">
+        <strong>技术栈</strong> Python · pytest · Playwright · YAML
+      </div>
+      <div>caseflow v3.0</div>
+    </div>
+  </div>
+</body>
+</html>

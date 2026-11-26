@@ -31,6 +31,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("mutate", help="把响应改坏再跑接口用例，找出断言太弱（假绿）的用例")
     p.add_argument("targets", nargs="*")
+    p.add_argument("--observe", action="store_true", help="观察模式：仅输出弱断言报告，不返回非零退出码")
+    p.add_argument("--changed", action="store_true", help="仅检查 git 变更涉及的接口测试与 YAML 关联文件")
+
+    p = sub.add_parser("guard", help="检查 git diff，拦截擅自删改断言或私加 skip/xfail 的行为")
+    p.add_argument("--base", default="HEAD", help="对比基准（默认 HEAD）")
+    p.add_argument("--allow", action="store_true", help="人工确认后放行预期变更（仍输出清单）")
 
     p = sub.add_parser("skill", help="安装或打印 AI 测试工作流技能（跨平台 / 跨 Agent）")
     p.add_argument("target", nargs="?", default=".", help="配合 --cursor / --agents 使用的目标项目目录")
@@ -71,7 +77,10 @@ def main(argv: list[str] | None = None) -> int:
         return export()
     if a.cmd == "mutate":
         from caseflow.mutate import main as mutate
-        return mutate(a.targets)
+        return mutate(a.targets, observe=a.observe, changed=a.changed)
+    if a.cmd == "guard":
+        from caseflow.guard import main as guard
+        return guard(base=a.base, allow=a.allow)
     if a.cmd == "skill":
         from caseflow.skill import install_skill
         return install_skill(cursor=a.cursor, agents=a.agents, print_only=a.print_only, target=a.target)

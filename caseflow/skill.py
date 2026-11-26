@@ -23,12 +23,24 @@ AGENTS_MD = """\
 - `caseflow auth <登录URL>`：手动过验证码并保存 `.auth/user.json`
 - `caseflow dom <URL> -i`：交互式抓取瘦身 DOM（省 Token 写 Page Object）
 - `caseflow export`：反向扫描代码与 YAML 导出 `reports/用例表.csv`
+- `caseflow guard`：检查 `git diff` 防止擅自删改断言或私加 `skip`/`xfail`
 - `caseflow mutate tests/api`：接口断言变异防假绿检查
 """
 
 
 def read_skill() -> str:
     return files("caseflow").joinpath("SKILL.md").read_text(encoding="utf-8")
+
+
+def _copy_references(skill_dir: Path) -> None:
+    refs_pkg = files("caseflow").joinpath("references")
+    if not refs_pkg.is_dir():
+        return
+    refs_dest = skill_dir / "references"
+    refs_dest.mkdir(parents=True, exist_ok=True)
+    for item in refs_pkg.iterdir():
+        if item.name.endswith(".md"):
+            (refs_dest / item.name).write_text(item.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def install_skill(cursor: bool = False, agents: bool = False, print_only: bool = False,
@@ -44,6 +56,7 @@ def install_skill(cursor: bool = False, agents: bool = False, print_only: bool =
         dest = base_home / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
+        _copy_references(dest.parent)
         print(f"[OK] Skill -> {dest}")
 
     proj = Path(target).resolve()
