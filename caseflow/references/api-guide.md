@@ -18,6 +18,7 @@
   - 使用 `api = client("user")`（进程内按角色自动复用登录，不触发限流）。
   - Python 代码直接 `from caseflow import gen` 调用 `gen.unique()`、`gen.today("-18y+1d")`、`gen.phone()`、`gen.text(251)`，不必绕弯调用 `fill("${unique}", {})`。
   - 链式断言：`resp.expect_ok().expect("data.id", exists=True)` 或 `resp.expect_code(10001)`（兼容国内 HTTP 200 + `body.code` 信封）。
+  - **注释与文档去冗余**：代码注释、模块 docstring 与 `PROJECT_MAP.md` 只写业务含义，禁止写入框架内部术语（如“轨道 A/B”“一页一文件”“一函数一场景”“元素依据 reports/dom/...”）或对话过程说明。
 
 ## 2. 文档漏写错误码 / 已知缺陷 → `xfail` 与 `xfail_strict`
 

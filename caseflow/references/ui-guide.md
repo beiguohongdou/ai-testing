@@ -28,3 +28,4 @@
   - **必须用 Web-First 断言**：`expect(locator).to_be_visible()` / `to_have_text()` / `to_have_count()`，禁止用 `assert locator.inner_text() == ...`（不会自动等待，极易偶发挂）。
   - **写入类用例禁止盲目自动重跑**：涉及下单、扣款、创建工单等数据写入的 UI 用例，禁止无脑配置自动重试（`--reruns`）；写入结果不明时应停在当前环节核查，优先将接口返回的业务标识带到页面精确核对。
   - 用例 docstring 第一行写 `TC-编号 标题`（供 `caseflow export` 扫描出表）。
+  - **注释与文档去冗余**：代码注释、模块 docstring 与 `PROJECT_MAP.md` 只写业务含义，禁止写入框架内部术语（如“轨道 A/B”“一页一文件”“一函数一场景”“元素依据 reports/dom/...”）或对话过程说明。
