@@ -15,11 +15,16 @@
 | **方案 1：脚本抓瘦身 DOM（主力，最省钱稳定）** | 单页直接 `caseflow dom <url> -o page.md`；**需先走完上游操作/弹窗的**用 `caseflow dom <login_url> -i`（浏览器里手动点到目标状态后回车抓取，可顺手输入本页检查点备忘），或用 `playwright codegen` 录一段草稿 | **极低**（每页 50～150 行交互骨架，约 **1,000～2,500 Token**） | 任意主流代码/对话模型均可高准确率完成 | 日常 90% 的页面元素获取与 PO 编写 |
 | **方案 2：Browser MCP / Agent 自主点击探索** | 让带浏览器工具的 Agent 自己点开页面、读 Accessibility Snapshot 或截图 | **偏高**（多轮截图 + 树回传，单页流程常 **1.5万～5万+ Token**） | 强 Tool-Calling / 多模态模型 | 无人值守探索陌生系统，且预算充足时 |
 
+- `caseflow dom` 会自动穿透开放 Shadow DOM 与可见 `<iframe>`（含 `## iframe:` 分节的元素需用 `page.frame_locator(...)` 定位），并识别可见 `<canvas>` 尺寸。
+- **图表与算法出图双轨校验**：
+  - 后端返回结构化数据 + 前端 `<canvas>` 渲染：API 层测算法规则/数值边界；UI 层用 `expect_response` 校验切换选项时新参数已正确传给后端，并用 `from caseflow.ui import canvas_hash` 断言画布非零尺寸且切换前后哈希变化（确认真实重绘）。
+  - 后端直接返回成品图片：固定入参配合 `expect(locator).to_have_screenshot(...)` 基线回归，或校验图片非空且不同选项哈希不同。
+
 ## 3. 生成 PO 与原生 Playwright 用例的铁律
 
 - **PO 一页一文件**：`pages/` 下按页面拆文件（如 `pages/login_page.py`、`pages/register_page.py`），每个文件只放 1 个 Page Object 类；PO 构造只接收 `page: Page`，直接用相对路径 `page.goto("/path")`（利用 `browser_context_args` 的 `base_url`），不在用例里手传 `base_url`。
 - **一函数一场景 + 按业务类分组**：用 `class TestXxx:` 按模块分组，每条 `test_*` 只测 1 个明确场景（6~15 行一眼可读）；禁止在一条用例里塞多角色串测，禁止在用例体里手写 `browser.new_context()` 或 `setting(...)`。
-- **清理统一进 `fixture` teardown（`yield`）**：删除临时账号、恢复账号资料、清空购物车等统一放根目录唯一 `conftest.py` 的 `yield` fixture 后置（显式用 `# setup` / `# teardown` 注释标明），用例体内不写 `try ... finally`。全项目默认只保留根目录 1 个 `conftest.py` 并用分节注释归类，偏底层的纯工具函数放 `utils/`。
+- **清理统一进 `fixture` teardown（`yield`）**：删除临时账号、恢复账号资料、清空购物车等统一放根目录唯一 `conftest.py` 的 `yield` fixture 后置（显式用 `# setup` / `# teardown` 注释标明），用例体内不写 `try ... finally`。全项目默认只保留根目录 1 个 `conftest.py` 并用分节注释归类，单 fixture 保持 3~15 行简短可读，超过 ~15 行的长造数/恢复/查询或底层工具按业务模块拆文件放进 `utils/<模块>_helpers.py`。
 - **先做映射表，再写代码**：拿到瘦身 DOM 后，先对照测试步骤确认「每一步操作/断言对应 DOM 里的哪个 `data-testid` / `role` / `label`」，找不到就直接提示「页面缺该元素（可能缺上游状态）」，**严禁凭想象编造定位器**。
 - **定位器优先级**：`get_by_test_id` > `get_by_role(..., name=...)` > `get_by_label` > `get_by_placeholder` > 稳定 `id`/`name`；避开动态长数字 id、`.nth()` 和样式类名。
 - **反脆弱铁律**：

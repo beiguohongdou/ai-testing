@@ -778,3 +778,66 @@ def test_dotenv_allow_hosts_secret_and_page_as_diagnostics(demo_proj, monkeypatc
     content = md_file.read_text(encoding="utf-8")
     assert "500 POST http://x/api" in content and "[error] boom" in content
     assert len(sections) == 1
+
+
+def test_extract_dom_pierces_shadow_dom_and_iframe(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    html = tmp_path / "complex.html"
+    html.write_text(
+        """<!doctype html><html><body>
+        <button data-test="main-btn" style="width:120px;height:32px;">主页面按钮</button>
+        <div id="host" style="width:200px;height:60px;"></div>
+        <script>
+          const sr = document.getElementById('host').attachShadow({mode: 'open'});
+          sr.innerHTML = '<button data-test="shadow-btn" style="width:120px;height:32px;">影子按钮</button>';
+        </script>
+        <iframe name="pay-frame" width="300" height="100"
+          srcdoc="<button data-test='iframe-btn' style='width:120px;height:32px;'>框内按钮</button>"></iframe>
+        <iframe name="hidden-frame" style="display:none"
+          srcdoc="<button data-test='hidden-iframe-btn'>隐藏按钮</button>"></iframe>
+        </body></html>""",
+        encoding="utf-8",
+    )
+    out = ui.extract_dom(html_file=str(html))
+    assert 'data-test="main-btn"' in out
+    assert 'data-test="shadow-btn"' in out and 'shadow="true"' in out
+    assert 'iframe[name="pay-frame"]' in out and "frame_locator" in out
+    assert 'data-test="iframe-btn"' in out
+    assert "hidden-iframe-btn" not in out
+
+
+def test_canvas_dom_and_redraw_hash(tmp_path):
+    pw = pytest.importorskip("playwright.sync_api")
+    html = tmp_path / "canvas.html"
+    html.write_text(
+        """<!doctype html><html><body>
+        <canvas id="chart" data-test="sales-chart" width="200" height="100"></canvas>
+        <button id="switch" type="button" onclick="drawCircle()">切换</button>
+        <script>
+          const ctx = document.getElementById('chart').getContext('2d');
+          ctx.fillStyle = '#0055ff';
+          ctx.fillRect(10, 10, 80, 60);
+          function drawCircle() {
+            ctx.clearRect(0, 0, 200, 100);
+            ctx.fillStyle = '#ff3300';
+            ctx.beginPath();
+            ctx.arc(100, 50, 35, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        </script></body></html>""",
+        encoding="utf-8",
+    )
+    dom = ui.extract_dom(html_file=str(html))
+    assert "canvas" in dom and 'data-test="sales-chart"' in dom and 'size="200x100"' in dom
+
+    with pw.sync_playwright() as p:
+        browser = ui._launch(p, headless=True)
+        page = browser.new_page()
+        page.set_content(html.read_text(encoding="utf-8"), wait_until="load")
+        chart = page.locator("#chart")
+        h1 = ui.canvas_hash(chart)
+        page.locator("#switch").click()
+        h2 = ui.canvas_hash(chart)
+        h3 = ui.canvas_hash(chart)
+        browser.close()
+    assert len(h1) == 64 and h1 != h2 and h2 == h3

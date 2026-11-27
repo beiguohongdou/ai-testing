@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -15,7 +16,7 @@ from caseflow.config import project_root, setting
 # 只收集能交互 / 能断言的元素；输出给 AI 的每一行都是一个候选定位器
 _COLLECT_JS = r"""
 (root) => {
-  const sel = 'a,button,input,select,textarea,[role],[data-testid],[data-test],[data-qa],[contenteditable="true"],label,h1,h2,h3,table,form,dialog';
+  const sel = 'a,button,input,select,textarea,[role],[data-testid],[data-test],[data-qa],[contenteditable="true"],label,h1,h2,h3,table,form,dialog,canvas';
   const out = [];
   const visible = (el) => {
     const r = el.getBoundingClientRect();
@@ -23,8 +24,8 @@ _COLLECT_JS = r"""
     return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
   };
   const text = (el) => (el.innerText || el.value || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-  for (const el of root.querySelectorAll(sel)) {
-    if (!visible(el)) continue;
+  const collectEl = (el, inShadow) => {
+    if (!visible(el)) return;
     const tag = el.tagName.toLowerCase();
     const a = {};
     for (const k of ['id','name','type','role','placeholder','aria-label','title','href','data-testid','data-test','data-qa','for']) {
@@ -33,14 +34,83 @@ _COLLECT_JS = r"""
     }
     if (tag === 'select') a.options = [...el.options].slice(0, 8).map(o => o.text.trim()).join('|');
     if (tag === 'table') a.headers = [...el.querySelectorAll('th')].slice(0, 10).map(th => th.innerText.trim()).join('|');
+    if (tag === 'canvas') {
+      const r = el.getBoundingClientRect();
+      a.size = `${Math.round(r.width)}x${Math.round(r.height)}`;
+    }
     if (el.disabled) a.disabled = 'true';
-    const t = ['table','form'].includes(tag) ? '' : text(el);
+    if (inShadow) a.shadow = 'true';
+    const t = ['table','form','canvas'].includes(tag) ? '' : text(el);
     out.push({tag, attrs: a, text: t});
-    if (out.length >= 400) break;
-  }
+  };
+  const walk = (node, inShadow) => {
+    if (!node || out.length >= 400) return;
+    for (const el of node.querySelectorAll('*')) {
+      if (out.length >= 400) break;
+      if (el.matches(sel)) collectEl(el, inShadow);
+      if (el.shadowRoot) walk(el.shadowRoot, true);
+    }
+  };
+  walk(root, false);
   return out;
 }
 """
+
+
+def _format_elements(items: list[dict]) -> list[str]:
+    lines = []
+    for it in items:
+        attrs = " ".join(f'{k}="{v}"' for k, v in it["attrs"].items())
+        lines.append(f"- {it['tag']} | {attrs} | {it['text']}".rstrip(" |"))
+    return lines
+
+
+def _safe_aria(root, limit: int = 8000) -> str:
+    try:
+        return (root.aria_snapshot() or "")[:limit]
+    except Exception:  # 老版本 Playwright 没有 aria_snapshot
+        return ""
+
+
+def _frame_selector(frame) -> str:
+    try:
+        el = frame.frame_element()
+        for attr in ("data-testid", "data-test", "name", "id", "title"):
+            val = el.get_attribute(attr)
+            if val and not (attr == "id" and re.search(r"\d{4,}|^[a-f0-9-]{16,}$", val)):
+                return f'iframe[{attr}="{val}"]'
+        if frame.name:
+            return f'iframe[name="{frame.name}"]'
+        if src := el.get_attribute("src"):
+            return f'iframe[src*="{src[:60]}"]'
+    except Exception:
+        pass
+    return f'iframe[url="{frame.url[:60]}"]' if getattr(frame, "url", "") else "iframe"
+
+
+def _collect_frames(page) -> list[str]:
+    if not hasattr(page, "frames") or not hasattr(page, "main_frame"):
+        return []
+    out: list[str] = []
+    for frame in page.frames:
+        if frame == page.main_frame or frame.is_detached():
+            continue
+        try:
+            if not frame.frame_element().is_visible():
+                continue
+            body = frame.locator("body").first
+            items = body.evaluate(_COLLECT_JS)
+        except Exception:
+            continue
+        aria = _safe_aria(body, limit=3000)
+        if not items and not aria:
+            continue
+        hint = _frame_selector(frame)
+        out += ["", f"## iframe：{hint}（需用 page.frame_locator('{hint}') 定位）"]
+        out += _format_elements(items)
+        if aria:
+            out += ["", "```yaml", aria, "```"]
+    return out
 
 
 def slim_dom(page, selector: str = "body") -> str:
@@ -48,15 +118,10 @@ def slim_dom(page, selector: str = "body") -> str:
     root = page.locator(selector).first
     items = root.evaluate(_COLLECT_JS)
     lines = [f"# 页面：{page.title()}", f"URL：{page.url}", "", "## 交互元素（tag | 属性 | 文本）"]
-    for it in items:
-        attrs = " ".join(f'{k}="{v}"' for k, v in it["attrs"].items())
-        lines.append(f"- {it['tag']} | {attrs} | {it['text']}".rstrip(" |"))
-    try:
-        aria = root.aria_snapshot()
-    except Exception:  # 老版本 Playwright 没有 aria_snapshot
-        aria = ""
-    if aria:
-        lines += ["", "## 无障碍树（get_by_role / get_by_label 的依据）", "```yaml", aria[:8000], "```"]
+    lines += _format_elements(items)
+    if aria := _safe_aria(root):
+        lines += ["", "## 无障碍树（get_by_role / get_by_label 的依据）", "```yaml", aria, "```"]
+    lines += _collect_frames(page)
     lines += ["", "> 定位器优先级：get_by_test_id > get_by_role(name=) > get_by_label > get_by_placeholder > 稳定 id/name；",
               "> 避开动态 id、nth()、样式类名；以上内容由 caseflow dom 生成，元素以真实页面为准。"]
     return "\n".join(lines)
@@ -111,7 +176,7 @@ def extract_dom(url: str | None = None, auth: str | None = None, selector: str =
         context = browser.new_context(**({"storage_state": state} if state and url else {}))
         page = context.new_page()
         if html_file:
-            page.set_content(Path(html_file).read_text(encoding="utf-8"))
+            page.set_content(Path(html_file).read_text(encoding="utf-8"), wait_until="load")
         else:
             page.goto(url, wait_until="networkidle")
         if wait:
@@ -195,3 +260,16 @@ def context_args(name: str = "user") -> dict:
     if state.is_file():
         args["storage_state"] = str(state)
     return args
+
+
+def canvas_hash(locator) -> str:
+    """校验 `<canvas>` 可见且宽高 > 0 后返回画面哈希，用于验证图表切换选项后真实重绘。"""
+    locator.wait_for(state="visible")
+    box = locator.bounding_box()
+    if not box or box["width"] <= 0 or box["height"] <= 0:
+        raise AssertionError("canvas 不可见或宽高为 0")
+    try:
+        raw = locator.evaluate("el => el.toDataURL('image/png')").encode("utf-8")
+    except Exception:  # 跨域画布等情况降级用截图计算
+        raw = locator.screenshot()
+    return hashlib.sha256(raw).hexdigest()

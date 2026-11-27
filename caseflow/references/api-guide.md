@@ -12,8 +12,8 @@
   - 按业务模块用 `class TestXxx:` 分组，每条 `test_*` 只聚焦一个清晰业务场景（docstring 第一行写 `编号 标题`）。
   - **无前后状态因果依赖禁止合并 `def`**：只有存在强状态串联的闭环流程（如建单→支付→查单、错密锁号→管理员解锁→恢复登录）才写在同一 `def` 内；互不依赖的只读接口、多维筛选条件、正反边界必须拆为独立 `test_*` 或使用 `@pytest.mark.parametrize`（若函数体里出现 `# 1) ... # 2) ...` 且彼此不传递状态变量，必须拆分）。
   - **单一根 `conftest.py` + `utils/` 分工**：
-    - 全项目默认只保留**根目录 1 个 `conftest.py`**（单一入口便于查找维护），内部按 `# === 全局与浏览器 ===`、`# === UI 前置与清理 ===`、`# === API 造数与清理 ===` 等分节注释归类；
-    - 偏底层的无 fixture 语义纯工具函数（如 JWT 解码与自动续期、TOTP 计算、加解密/签名、日期/数据格式转换等）抽离到 `utils/`，保持 `conftest.py` 清爽；
+    - 全项目默认只保留**根目录 1 个 `conftest.py`**，内部按 `# === 全局与浏览器 ===`、`# === UI 前置与清理 ===`、`# === API 造数与清理 ===` 等分节注释归类；
+    - **长短分流标准**：生命周期入口（`scope="session"` 缓存、`yield` 的 `# setup` / `# teardown`）以及 10 行以内的短逻辑直接留在 `conftest.py`（保持每个 fixture 约 3~15 行，像目录总控台一样一眼可读）；超过 ~15 行的长造数 JSON、多页查询循环、资源批量清理、底层算法（JWT/TOTP/加解密/签名）或数据库操作抽成纯函数，并**按业务模块拆文件放到 `utils/<模块>_helpers.py`**（如 `utils/auth_helpers.py`、`utils/catalog_helpers.py`），禁止全堆进单个文件；
     - **清理统一进 `fixture` teardown（`yield`）**：在 `conftest.py` 编写清理/恢复型 `yield` fixture（显式用 `# setup` / `# teardown` 注释标明前置与后置；清理失败可忽略或打警告，不掩盖主流程失败），避免在用例体内手写 `try ... finally`。
   - 使用 `api = client("user")`（进程内按角色自动复用登录，不触发限流）。
   - Python 代码直接 `from caseflow import gen` 调用 `gen.unique()`、`gen.today("-18y+1d")`、`gen.phone()`、`gen.text(251)`，不必绕弯调用 `fill("${unique}", {})`。
